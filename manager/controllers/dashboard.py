@@ -51,7 +51,7 @@ def dashboard():
     license_info = None
     if hasattr(globals(), 'license_manager') and license_manager:
         try:
-            license_info = license_manager.get_license_status()
+            license_info = license_manager.get_license_status_sync()
         except Exception as e:
             logger.warning(f"License check failed: {e}")
             license_info = {'valid': False, 'edition': 'Community'}
@@ -342,7 +342,7 @@ def license():
     license_info = None
     if hasattr(globals(), 'license_manager') and license_manager:
         try:
-            license_info = license_manager.get_license_status()
+            license_info = license_manager.get_license_status_sync()
         except Exception as e:
             logger.warning(f"License check failed: {e}")
             license_info = {'valid': False, 'edition': 'Community', 'error': str(e)}

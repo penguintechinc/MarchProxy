@@ -630,7 +630,7 @@ def users():
             return {'error': 'Failed to create user'}
 
 
-# Proxy registration using API key authentication
+# Proxy registration and management using API key authentication
 @action('/api/proxy/register', methods=['POST'])
 @enable_cors()
 def proxy_register():
@@ -665,6 +665,311 @@ def proxy_register():
     }
 
 
+@action('/api/proxy/heartbeat', methods=['POST'])
+@enable_cors()
+def proxy_heartbeat():
+    """Proxy heartbeat and status update"""
+    data = request.json
+
+    success = ProxyServerModel.update_heartbeat(
+        db,
+        proxy_name=data['proxy_name'],
+        cluster_api_key=data['cluster_api_key'],
+        status_data={
+            'version': data.get('version'),
+            'capabilities': data.get('capabilities'),
+            'config_version': data.get('config_version')
+        }
+    )
+
+    if not success:
+        response.status = 401
+        return {'error': 'Invalid API key or proxy not found'}
+
+    # Record metrics if provided
+    if 'metrics' in data and data['metrics']:
+        try:
+            proxy = db(
+                (db.proxy_servers.name == data['proxy_name']) &
+                (db.proxy_servers.cluster_id == ClusterModel.validate_api_key(db, data['cluster_api_key'])['cluster_id'])
+            ).select().first()
+
+            if proxy:
+                ProxyMetricsModel.record_metrics(db, proxy.id, data['metrics'])
+        except Exception as e:
+            logger.warning(f"Failed to record metrics: {e}")
+
+    return {'message': 'Heartbeat received successfully'}
+
+
+@action('/api/proxy/config/<proxy_name>', methods=['GET'])
+@enable_cors()
+def proxy_config(proxy_name):
+    """Get configuration for specific proxy"""
+    auth_header = request.headers.get('Authorization', '')
+    api_key = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+
+    if not api_key:
+        response.status = 401
+        return {'error': 'API key required'}
+
+    config = ProxyServerModel.get_proxy_config(db, proxy_name, api_key)
+    if not config:
+        response.status = 401
+        return {'error': 'Invalid API key or proxy not found'}
+
+    return config
+
+
+@action('/api/proxy/stats/<cluster_id:int>', methods=['GET'])
+@action.uses(auth, auth.user)
+@enable_cors()
+def proxy_stats(cluster_id):
+    """Get proxy statistics for cluster"""
+    user = auth.get_user()
+
+    # Check access permissions
+    if not user.get('is_admin'):
+        user_role = UserClusterAssignmentModel.check_user_cluster_access(db, user['id'], cluster_id)
+        if not user_role:
+            abort(403)
+
+    stats = ProxyServerModel.get_proxy_stats(db, cluster_id)
+    return {'stats': stats}
+
+
+@action('/api/proxy/<proxy_id:int>/metrics', methods=['GET'])
+@action.uses(auth, auth.user)
+@enable_cors()
+def proxy_metrics(proxy_id):
+    """Get metrics for specific proxy"""
+    user = auth.get_user()
+
+    # Get proxy to check cluster access
+    proxy = db.proxy_servers[proxy_id]
+    if not proxy:
+        abort(404)
+
+    # Check access permissions
+    if not user.get('is_admin'):
+        user_role = UserClusterAssignmentModel.check_user_cluster_access(db, user['id'], proxy.cluster_id)
+        if not user_role:
+            abort(403)
+
+    hours = int(request.vars.get('hours', 24))
+    metrics = ProxyMetricsModel.get_metrics(db, proxy_id, hours)
+
+    return {
+        'proxy_id': proxy_id,
+        'metrics': metrics
+    }
+
+
+@action('/api/proxy/license-status', methods=['GET'])
+@enable_cors()
+def proxy_license_status():
+    """Check license status for proxy count validation"""
+    auth_header = request.headers.get('Authorization', '')
+    api_key = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+
+    if not api_key:
+        response.status = 401
+        return {'error': 'API key required'}
+
+    # Validate API key and get cluster info
+    cluster_info = ClusterModel.validate_api_key(db, api_key)
+    if not cluster_info:
+        response.status = 401
+        return {'error': 'Invalid API key'}
+
+    cluster_id = cluster_info['cluster_id']
+    active_proxies = ClusterModel.count_active_proxies(db, cluster_id)
+    max_proxies = cluster_info['max_proxies']
+
+    # Get license information
+    license_status = "community"
+    features = []
+
+    if hasattr(globals(), 'license_manager') and license_manager:
+        try:
+            license_info = license_manager.get_license_status_sync()
+            if license_info.get('valid'):
+                license_status = "enterprise"
+                features = license_info.get('features', {})
+        except Exception as e:
+            logger.warning(f"License check failed: {e}")
+
+    return {
+        'license_status': license_status,
+        'features': features,
+        'cluster': {
+            'id': cluster_id,
+            'name': cluster_info['name'],
+            'active_proxies': active_proxies,
+            'max_proxies': max_proxies,
+            'can_register_more': active_proxies < max_proxies
+        }
+    }
+
+
+# License validation endpoints (async)
+@action('/api/license/validate', methods=['POST'])
+@action.uses(auth, auth.user)
+@enable_cors()
+async def validate_license():
+    """Validate license key (admin only)"""
+    user = auth.get_user()
+
+    if not user.get('is_admin'):
+        abort(403)
+
+    data = request.json
+    license_key = data.get('license_key')
+    force_refresh = data.get('force_refresh', False)
+
+    if not license_key:
+        response.status = 400
+        return {'error': 'License key required'}
+
+    try:
+        validation_result = await license_manager.validate_license_key(license_key, force_refresh)
+        return {
+            'license': validation_result,
+            'message': 'License validated successfully'
+        }
+    except Exception as e:
+        logger.error(f"License validation failed: {e}")
+        response.status = 500
+        return {'error': f'License validation failed: {str(e)}'}
+
+
+@action('/api/license/status', methods=['GET'])
+@action.uses(auth, auth.user)
+@enable_cors()
+async def license_status():
+    """Get current license status (admin only)"""
+    user = auth.get_user()
+
+    if not user.get('is_admin'):
+        abort(403)
+
+    try:
+        license_info = await license_manager.get_license_status()
+        features = await license_manager.get_available_features()
+
+        return {
+            'license': license_info,
+            'available_features': features
+        }
+    except Exception as e:
+        logger.error(f"License status check failed: {e}")
+        response.status = 500
+        return {'error': f'License status check failed: {str(e)}'}
+
+
+@action('/api/license/features', methods=['GET'])
+@action.uses(auth, auth.user)
+@enable_cors()
+async def license_features():
+    """Get available features for current user"""
+    user = auth.get_user()
+
+    try:
+        features = await license_manager.get_available_features()
+
+        # Filter features based on user permissions
+        user_features = []
+
+        # Basic features for all users
+        basic_features = ['basic_proxy', 'tcp_proxy', 'udp_proxy', 'basic_auth', 'api_tokens']
+        user_features.extend([f for f in features if f in basic_features])
+
+        # Admin-only features
+        if user.get('is_admin'):
+            admin_features = ['multi_cluster', 'saml_authentication', 'oauth2_authentication', 'metrics_advanced']
+            user_features.extend([f for f in features if f in admin_features])
+
+        return {'features': user_features}
+    except Exception as e:
+        logger.error(f"Feature check failed: {e}")
+        response.status = 500
+        return {'error': f'Feature check failed: {str(e)}'}
+
+
+@action('/api/license/check-feature/<feature>', methods=['GET'])
+@action.uses(auth, auth.user)
+@enable_cors()
+async def check_feature(feature):
+    """Check if specific feature is enabled"""
+    user = auth.get_user()
+
+    try:
+        is_enabled = await license_manager.check_feature_enabled(feature)
+
+        # Additional permission checks for admin features
+        admin_features = {'multi_cluster', 'saml_authentication', 'oauth2_authentication', 'user_management'}
+        if feature in admin_features and not user.get('is_admin'):
+            is_enabled = False
+
+        return {
+            'feature': feature,
+            'enabled': is_enabled
+        }
+    except Exception as e:
+        logger.error(f"Feature check failed: {e}")
+        response.status = 500
+        return {'error': f'Feature check failed: {str(e)}'}
+
+
+@action('/api/license/keepalive', methods=['POST'])
+@action.uses(auth, auth.user)
+@enable_cors()
+async def send_license_keepalive():
+    """Send keepalive to license server (admin only)"""
+    user = auth.get_user()
+
+    if not user.get('is_admin'):
+        abort(403)
+
+    if not license_manager or not license_manager.license_key:
+        response.status = 400
+        return {'error': 'No enterprise license configured'}
+
+    try:
+        success = await license_manager.send_keepalive()
+        if success:
+            return {'message': 'Keepalive sent successfully'}
+        else:
+            response.status = 500
+            return {'error': 'Keepalive failed'}
+    except Exception as e:
+        logger.error(f"Manual keepalive failed: {e}")
+        response.status = 500
+        return {'error': f'Keepalive failed: {str(e)}'}
+
+
+@action('/api/license/keepalive-health', methods=['GET'])
+@action.uses(auth, auth.user)
+@enable_cors()
+def get_keepalive_health():
+    """Get keepalive health status (admin only)"""
+    user = auth.get_user()
+
+    if not user.get('is_admin'):
+        abort(403)
+
+    if not license_manager:
+        return {'status': 'not_applicable', 'message': 'No license manager configured'}
+
+    try:
+        health = license_manager.get_keepalive_health()
+        return {'keepalive_health': health}
+    except Exception as e:
+        logger.error(f"Keepalive health check failed: {e}")
+        response.status = 500
+        return {'error': f'Keepalive health check failed: {str(e)}'}
+
+
 # Health endpoints
 @action('/healthz')
 @enable_cors()
@@ -676,8 +981,14 @@ def health_check():
 
         # Check license status
         license_status = "community"
-        if LICENSE_KEY:
-            license_status = "enterprise"
+        if license_manager and license_manager.license_key:
+            try:
+                license_info = license_manager.get_license_status_sync()
+                if license_info.get('valid') and license_info.get('is_enterprise'):
+                    license_status = "enterprise"
+            except Exception as e:
+                logger.warning(f"License check in health endpoint failed: {e}")
+                license_status = "community"
 
         return {
             'status': 'healthy',
@@ -770,6 +1081,43 @@ def initialize_default_data():
         logger.error(f"Failed to initialize default data: {e}")
 
 
+# Background task for proxy cleanup
+def cleanup_stale_proxies():
+    """Background task to clean up stale proxies"""
+    try:
+        cleaned = ProxyServerModel.cleanup_stale_proxies(db, timeout_minutes=10)
+        if cleaned > 0:
+            logger.info(f"Marked {cleaned} stale proxies as inactive")
+    except Exception as e:
+        logger.error(f"Proxy cleanup failed: {e}")
+
+
+# Schedule proxy cleanup task
+import threading
+import time
+
+def run_background_tasks():
+    """Run background tasks periodically"""
+    while True:
+        try:
+            cleanup_stale_proxies()
+            # Also clean up old metrics
+            ProxyMetricsModel.cleanup_old_metrics(db, days=30)
+        except Exception as e:
+            logger.error(f"Background task failed: {e}")
+        time.sleep(300)  # Run every 5 minutes
+
+
+# Start background thread
+background_thread = threading.Thread(target=run_background_tasks, daemon=True)
+background_thread.start()
+
 # Initialize on startup
 initialize_default_data()
+
+# Schedule license keepalive if enterprise license is configured
+if license_manager and license_manager.license_key:
+    license_manager.schedule_keepalive(interval_hours=1)
+    logger.info("License keepalive scheduled")
+
 logger.info("MarchProxy Manager with py4web native auth started successfully")
