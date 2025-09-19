@@ -93,6 +93,22 @@ Project fully planned with comprehensive documentation architecture. Ready to be
 - **Testing**: TBD based on project structure (will be defined during Phase 1)
 - **Linting**: TBD based on project structure (will be defined during Phase 1)
 
+## py4web Documentation and Research
+- **Official Documentation**: https://py4web.com/_documentation
+- **Always research py4web native features before implementing custom solutions**
+- **Leverage py4web's built-in authentication, user management, and API systems**
+- **Use py4web's native decorators, validators, and utilities wherever possible**
+- **Priority order: py4web native → pydal features → custom implementation**
+
+## Input Validation and Security Requirements
+- **ALL fields and inputs MUST have appropriate validators**
+- **Use pydal's built-in validators (IS_EMAIL, IS_STRONG, IS_IN_SET, etc.)**
+- **Implement input sanitization for XSS prevention**
+- **Validate data types, lengths, and formats at database and API levels**
+- **Use py4web's native form validation and error handling**
+- **Never trust client-side input - always validate server-side**
+- **Implement CSRF protection using py4web's native features**
+
 ## Key Environment Variables
 - `CLUSTER_API_KEY`: Cluster-specific API key for proxy registration (Docker ENV)
 - `DATABASE_URL`: Database connection string for manager
