@@ -1,0 +1,142 @@
+# Pre-commit configuration for MarchProxy
+
+repos:
+  # Python hooks
+  - repo: https://github.com/psf/black
+    rev: 23.12.1
+    hooks:
+      - id: black
+        language_version: python3
+        files: '^manager/.*\.py$'
+
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        args: ["--profile", "black", "--filter-files"]
+        files: '^manager/.*\.py$'
+
+  - repo: https://github.com/pycqa/flake8
+    rev: 7.0.0
+    hooks:
+      - id: flake8
+        args: ['--max-line-length=120', '--extend-ignore=E203,W503']
+        files: '^manager/.*\.py$'
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.8.0
+    hooks:
+      - id: mypy
+        args: [--ignore-missing-imports]
+        files: '^manager/.*\.py$'
+        additional_dependencies: [types-requests, types-PyYAML]
+
+  - repo: https://github.com/pycqa/bandit
+    rev: 1.7.6
+    hooks:
+      - id: bandit
+        args: ['-ll']
+        files: '^manager/.*\.py$'
+
+  # Go hooks
+  - repo: https://github.com/dnephin/pre-commit-golang
+    rev: v0.5.1
+    hooks:
+      - id: go-fmt
+        files: '^proxy/.*\.go$'
+      - id: go-vet
+        files: '^proxy/.*\.go$'
+      - id: go-imports
+        files: '^proxy/.*\.go$'
+      - id: go-cyclo
+        args: [-over=15]
+        files: '^proxy/.*\.go$'
+      - id: go-mod-tidy
+        files: '^proxy/go\.mod$'
+      - id: golangci-lint
+        files: '^proxy/.*\.go$'
+
+  # Security scanning
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.4.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+
+  # YAML/JSON validation
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: check-yaml
+        args: ['--unsafe']
+      - id: check-json
+      - id: check-toml
+      - id: check-xml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+
+  # Docker
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.12.0
+    hooks:
+      - id: hadolint-docker
+        files: 'Dockerfile.*'
+
+  # Markdown
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.38.0
+    hooks:
+      - id: markdownlint
+        args: ['--fix']
+
+  # Shell scripts
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.9.0.6
+    hooks:
+      - id: shellcheck
+
+  # License headers
+  - repo: https://github.com/Lucas-C/pre-commit-hooks
+    rev: v1.5.4
+    hooks:
+      - id: insert-license
+        name: Insert license in Python files
+        files: '^manager/.*\.py$'
+        args:
+          - --license-filepath=.license-header-python
+          - --comment-style=#
+
+      - id: insert-license
+        name: Insert license in Go files
+        files: '^proxy/.*\.go$'
+        args:
+          - --license-filepath=.license-header-go
+          - --comment-style=//
+
+  # Commit message
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v3.13.0
+    hooks:
+      - id: commitizen
+        stages: [commit-msg]
+
+# Configuration
+default_language_version:
+  python: python3.11
+
+exclude: |
+  (?x)^(
+    .*\.min\.(js|css)|
+    .*\.svg|
+    vendor/.*|
+    node_modules/.*|
+    .*\.lock|
+    .*\.sum
+  )$
+
+fail_fast: false

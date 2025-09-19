@@ -1,0 +1,261 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: marchproxy-config
+  namespace: marchproxy
+  labels:
+    app.kubernetes.io/name: marchproxy
+    app.kubernetes.io/component: config
+data:
+  proxy.yaml: |
+    server:
+      host: "0.0.0.0"
+      port: 8080
+      admin_port: 8081
+      metrics_port: 8090
+      read_timeout: 30s
+      write_timeout: 30s
+      idle_timeout: 120s
+      max_header_bytes: 1048576
+      
+    manager:
+      url: "http://marchproxy-manager:8000"
+      api_key: "${CLUSTER_API_KEY}"
+      timeout: 10s
+      retry_attempts: 3
+      retry_delay: 1s
+      
+    cache:
+      enabled: true
+      type: "redis"
+      redis:
+        addresses: ["marchproxy-redis:6379"]
+        password: "${REDIS_PASSWORD}"
+        database: 1
+        pool_size: 10
+        max_retries: 3
+      ttl: 300s
+      
+    rate_limiting:
+      enabled: true
+      global_limit: 1000
+      per_ip_limit: 100
+      window: 60s
+      
+    security:
+      waf:
+        enabled: true
+        mode: "prevention"
+        paranoia_level: 2
+      tls:
+        enabled: true
+        min_version: "1.2"
+        cert_file: "/app/certs/tls.crt"
+        key_file: "/app/certs/tls.key"
+        
+    tracing:
+      enabled: true
+      jaeger:
+        endpoint: "http://marchproxy-jaeger:14268/api/traces"
+        sample_rate: 0.1
+        
+    metrics:
+      enabled: true
+      prometheus:
+        path: "/metrics"
+        
+    health:
+      enabled: true
+      path: "/health"
+      check_interval: 30s
+      
+    logging:
+      level: "info"
+      format: "json"
+      output: "stdout"
+
+  manager.yaml: |
+    database:
+      url: "postgresql://marchproxy:${POSTGRES_PASSWORD}@marchproxy-postgres:5432/marchproxy"
+      max_connections: 20
+      ssl_mode: "prefer"
+      
+    redis:
+      url: "redis://:${REDIS_PASSWORD}@marchproxy-redis:6379/0"
+      pool_size: 10
+      
+    authentication:
+      jwt:
+        secret_key: "${JWT_SECRET_KEY}"
+        algorithm: "HS256"
+        expiration: 3600
+      oauth2:
+        enabled: false
+        
+    authorization:
+      rbac:
+        enabled: true
+        
+    clustering:
+      enabled: true
+      api_keys:
+        default: "${CLUSTER_API_KEY}"
+        
+    logging:
+      level: "info"
+      format: "json"
+      
+    security:
+      cors:
+        enabled: true
+        allowed_origins: ["*"]
+        allowed_methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+        
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+      
+    rule_files:
+      - "/etc/prometheus/rules/*.yml"
+      
+    scrape_configs:
+      - job_name: 'marchproxy-proxy'
+        static_configs:
+          - targets: ['marchproxy-proxy:8090']
+        metrics_path: /metrics
+        scrape_interval: 15s
+        
+      - job_name: 'marchproxy-manager'
+        static_configs:
+          - targets: ['marchproxy-manager:8000']
+        metrics_path: /metrics
+        scrape_interval: 15s
+        
+      - job_name: 'kubernetes-pods'
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: ['marchproxy']
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+            
+  grafana-datasources.yml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://marchproxy-prometheus:9090
+        isDefault: true
+        editable: true
+        
+      - name: Jaeger
+        type: jaeger
+        access: proxy
+        url: http://marchproxy-jaeger:16686
+        editable: true
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: marchproxy-nginx-config
+  namespace: marchproxy
+  labels:
+    app.kubernetes.io/name: marchproxy
+    app.kubernetes.io/component: nginx
+data:
+  nginx.conf: |
+    user nginx;
+    worker_processes auto;
+    error_log /var/log/nginx/error.log warn;
+    pid /var/run/nginx.pid;
+    
+    events {
+        worker_connections 1024;
+        use epoll;
+        multi_accept on;
+    }
+    
+    http {
+        include /etc/nginx/mime.types;
+        default_type application/octet-stream;
+        
+        log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                        '$status $body_bytes_sent "$http_referer" '
+                        '"$http_user_agent" "$http_x_forwarded_for"';
+                        
+        access_log /var/log/nginx/access.log main;
+        
+        sendfile on;
+        tcp_nopush on;
+        tcp_nodelay on;
+        keepalive_timeout 65;
+        types_hash_max_size 2048;
+        client_max_body_size 100m;
+        
+        gzip on;
+        gzip_vary on;
+        gzip_proxied any;
+        gzip_comp_level 6;
+        gzip_types
+            text/plain
+            text/css
+            text/xml
+            text/javascript
+            application/json
+            application/javascript
+            application/xml+rss
+            application/atom+xml
+            image/svg+xml;
+            
+        upstream marchproxy-manager {
+            server marchproxy-manager:8000;
+        }
+        
+        upstream marchproxy-proxy {
+            server marchproxy-proxy:8080;
+        }
+        
+        server {
+            listen 80;
+            server_name _;
+            
+            location /health {
+                access_log off;
+                return 200 "healthy\n";
+                add_header Content-Type text/plain;
+            }
+            
+            location /manager/ {
+                proxy_pass http://marchproxy-manager/;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+            }
+            
+            location / {
+                proxy_pass http://marchproxy-proxy;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+                proxy_connect_timeout 30s;
+                proxy_send_timeout 30s;
+                proxy_read_timeout 30s;
+            }
+        }
+    }

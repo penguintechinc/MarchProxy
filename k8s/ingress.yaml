@@ -1,0 +1,268 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: marchproxy-manager-ingress
+  namespace: marchproxy
+  labels:
+    app: marchproxy-manager
+    component: manager
+  annotations:
+    # General ingress annotations
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+
+    # Security annotations
+    nginx.ingress.kubernetes.io/secure-backends: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+
+    # Rate limiting
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    nginx.ingress.kubernetes.io/rate-limit-connections: "10"
+
+    # CORS and security headers
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "https://marchproxy.example.com"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Authorization"
+    nginx.ingress.kubernetes.io/cors-max-age: "86400"
+
+    # Custom headers
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-XSS-Protection: 1; mode=block";
+      more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
+      more_set_headers "Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none';";
+
+    # Certificate management (cert-manager)
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    cert-manager.io/acme-challenge-type: "http01"
+
+    # External DNS
+    external-dns.alpha.kubernetes.io/hostname: "marchproxy.example.com"
+    external-dns.alpha.kubernetes.io/ttl: "300"
+spec:
+  tls:
+  - hosts:
+    - marchproxy.example.com
+    - api.marchproxy.example.com
+    secretName: marchproxy-manager-tls
+  rules:
+  - host: marchproxy.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: marchproxy-manager
+            port:
+              number: 8000
+  - host: api.marchproxy.example.com
+    http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: marchproxy-manager
+            port:
+              number: 8000
+      - path: /healthz
+        pathType: Prefix
+        backend:
+          service:
+            name: marchproxy-manager
+            port:
+              number: 8000
+      - path: /metrics
+        pathType: Prefix
+        backend:
+          service:
+            name: marchproxy-manager
+            port:
+              number: 9090
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: marchproxy-monitoring-ingress
+  namespace: marchproxy
+  labels:
+    app: marchproxy-monitoring
+    component: monitoring
+  annotations:
+    # General ingress annotations
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+
+    # Authentication (basic auth for monitoring endpoints)
+    nginx.ingress.kubernetes.io/auth-type: "basic"
+    nginx.ingress.kubernetes.io/auth-secret: "marchproxy-monitoring-auth"
+    nginx.ingress.kubernetes.io/auth-realm: "MarchProxy Monitoring"
+
+    # Security annotations
+    nginx.ingress.kubernetes.io/secure-backends: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+
+    # Rate limiting (more restrictive for monitoring)
+    nginx.ingress.kubernetes.io/rate-limit: "50"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    nginx.ingress.kubernetes.io/rate-limit-connections: "5"
+
+    # Whitelist monitoring access to specific IPs
+    nginx.ingress.kubernetes.io/whitelist-source-range: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+
+    # Certificate management
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    cert-manager.io/acme-challenge-type: "http01"
+
+    # External DNS
+    external-dns.alpha.kubernetes.io/hostname: "monitoring.marchproxy.example.com"
+    external-dns.alpha.kubernetes.io/ttl: "300"
+spec:
+  tls:
+  - hosts:
+    - monitoring.marchproxy.example.com
+    secretName: marchproxy-monitoring-tls
+  rules:
+  - host: monitoring.marchproxy.example.com
+    http:
+      paths:
+      - path: /prometheus
+        pathType: Prefix
+        backend:
+          service:
+            name: prometheus
+            port:
+              number: 9090
+      - path: /grafana
+        pathType: Prefix
+        backend:
+          service:
+            name: grafana
+            port:
+              number: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: marchproxy-manager-netpol
+  namespace: marchproxy
+  labels:
+    app: marchproxy-manager
+    component: manager
+spec:
+  podSelector:
+    matchLabels:
+      app: marchproxy-manager
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    - namespaceSelector:
+        matchLabels:
+          name: marchproxy
+      podSelector:
+        matchLabels:
+          app: marchproxy-proxy
+    ports:
+    - protocol: TCP
+      port: 8000
+    - protocol: TCP
+      port: 9090
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: marchproxy
+      podSelector:
+        matchLabels:
+          app: postgresql
+    ports:
+    - protocol: TCP
+      port: 5432
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: marchproxy
+      podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 53
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: marchproxy-proxy-netpol
+  namespace: marchproxy
+  labels:
+    app: marchproxy-proxy
+    component: proxy
+spec:
+  podSelector:
+    matchLabels:
+      app: marchproxy-proxy
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from: []
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: UDP
+      port: 8080
+    - protocol: UDP
+      port: 8443
+    - protocol: TCP
+      port: 9090
+    - protocol: TCP
+      port: 8888
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: marchproxy
+      podSelector:
+        matchLabels:
+          app: marchproxy-manager
+    ports:
+    - protocol: TCP
+      port: 8000
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 53
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 80

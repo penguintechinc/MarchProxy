@@ -1,0 +1,238 @@
+# MarchProxy Helm Chart Values
+# This file contains the default configuration values for MarchProxy
+
+global:
+  # Global image settings
+  imageRegistry: ""
+  imagePullSecrets: []
+  storageClass: ""
+
+  # Global labels applied to all resources
+  commonLabels: {}
+  commonAnnotations: {}
+
+# MarchProxy Manager configuration
+manager:
+  enabled: true
+  image:
+    registry: docker.io
+    repository: marchproxy/manager
+    tag: "v1.0.0"
+    pullPolicy: IfNotPresent
+
+  replicaCount: 2
+
+  service:
+    type: ClusterIP
+    port: 8000
+    metricsPort: 9090
+    annotations: {}
+
+  ingress:
+    enabled: true
+    className: "nginx"
+    annotations:
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/rate-limit: "100"
+      cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    hosts:
+      - host: marchproxy.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: marchproxy-manager-tls
+        hosts:
+          - marchproxy.example.com
+
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+  config:
+    logLevel: "info"
+    clusterMode: "enterprise"
+    prometheusEnabled: true
+    healthCheckEnabled: true
+
+  secrets:
+    jwtSecret: ""
+    databaseUrl: ""
+    redisUrl: ""
+
+# MarchProxy Proxy configuration
+proxy:
+  enabled: true
+  image:
+    registry: docker.io
+    repository: marchproxy/proxy
+    tag: "v1.0.0"
+    pullPolicy: IfNotPresent
+
+  replicaCount: 3
+
+  service:
+    type: LoadBalancer
+    tcpPort: 8080
+    udpPort: 8080
+    quicPort: 8443
+    metricsPort: 9090
+    healthPort: 8888
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    loadBalancerSourceRanges:
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+
+  autoscaling:
+    enabled: false
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+  config:
+    logLevel: "info"
+    proxyMode: "production"
+    enableEbpf: true
+    enableHardwareAcceleration: false
+    prometheusEnabled: true
+    healthCheckEnabled: true
+    configRefreshInterval: "60s"
+    gomaxprocs: "2"
+
+  secrets:
+    clusterApiKey: ""
+
+  security:
+    capabilities:
+      add:
+        - NET_ADMIN
+        - NET_RAW
+        - SYS_ADMIN
+    privileged: false
+    readOnlyRootFilesystem: true
+
+# PostgreSQL configuration (using Bitnami chart)
+postgresql:
+  enabled: true
+  auth:
+    postgresPassword: "marchproxy123"
+    username: "marchproxy"
+    password: "marchproxy123"
+    database: "marchproxy"
+  primary:
+    persistence:
+      enabled: true
+      size: 20Gi
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "250m"
+      limits:
+        memory: "512Mi"
+        cpu: "500m"
+
+# Redis configuration (using Bitnami chart)
+redis:
+  enabled: true
+  auth:
+    enabled: true
+    password: "redis123"
+  master:
+    persistence:
+      enabled: true
+      size: 8Gi
+    resources:
+      requests:
+        memory: "128Mi"
+        cpu: "100m"
+      limits:
+        memory: "256Mi"
+        cpu: "200m"
+
+# Monitoring configuration
+monitoring:
+  prometheus:
+    enabled: true
+    server:
+      retention: "15d"
+      persistentVolume:
+        size: 50Gi
+      resources:
+        requests:
+          memory: "512Mi"
+          cpu: "500m"
+        limits:
+          memory: "1Gi"
+          cpu: "1000m"
+
+  grafana:
+    enabled: true
+    adminPassword: "admin123"
+    persistence:
+      enabled: true
+      size: 10Gi
+    resources:
+      requests:
+        memory: "128Mi"
+        cpu: "100m"
+      limits:
+        memory: "256Mi"
+        cpu: "200m"
+
+# Security settings
+security:
+  networkPolicy:
+    enabled: true
+
+  serviceAccount:
+    create: true
+    annotations: {}
+    name: ""
+
+  rbac:
+    create: true
+
+  podSecurityPolicy:
+    enabled: false
+
+# TLS/Certificate configuration
+tls:
+  enabled: true
+  certManager:
+    enabled: true
+    issuer: "letsencrypt-prod"
+
+# Node selection and scheduling
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Pod disruption budget
+podDisruptionBudget:
+  enabled: true
+  manager:
+    minAvailable: 1
+  proxy:
+    minAvailable: 2

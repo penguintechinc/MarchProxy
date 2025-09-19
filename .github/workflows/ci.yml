@@ -1,0 +1,331 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+env:
+  GO_VERSION: '1.21'
+  PYTHON_VERSION: '3.11'
+  NODE_VERSION: '18'
+
+jobs:
+  lint-go:
+    name: Lint Go Code
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Install golangci-lint
+      run: |
+        curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.54.2
+
+    - name: Run golangci-lint
+      run: |
+        cd proxy
+        golangci-lint run --timeout 5m
+
+  lint-python:
+    name: Lint Python Code
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install black isort flake8 mypy bandit pylint
+
+    - name: Check with black
+      run: black --check manager/
+
+    - name: Check with isort
+      run: isort --check-only manager/
+
+    - name: Lint with flake8
+      run: flake8 manager/ --max-line-length=120 --extend-ignore=E203,W503
+
+    - name: Type check with mypy
+      run: mypy manager/ --ignore-missing-imports
+
+    - name: Security check with bandit
+      run: bandit -r manager/ -ll
+
+  test-go:
+    name: Test Go Code
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: marchproxy_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Get dependencies
+      run: |
+        cd proxy
+        go mod download
+
+    - name: Build
+      run: |
+        cd proxy
+        go build -v ./...
+
+    - name: Test with coverage
+      run: |
+        cd proxy
+        go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./proxy/coverage.out
+        flags: go
+        name: codecov-go
+
+  test-python:
+    name: Test Python Code
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: marchproxy_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r manager/requirements.txt
+        pip install -r manager/requirements-dev.txt
+        pip install pytest pytest-cov pytest-asyncio
+
+    - name: Test with pytest
+      run: |
+        cd manager
+        pytest tests/ -v --cov=. --cov-report=xml --cov-report=term
+      env:
+        DATABASE_URL: postgresql://test:test@localhost:5432/marchproxy_test
+        REDIS_URL: redis://localhost:6379/0
+        JWT_SECRET: test_secret_key
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./manager/coverage.xml
+        flags: python
+        name: codecov-python
+
+  build-docker:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build Manager Image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./manager
+        push: false
+        tags: marchproxy/manager:test
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Build Proxy Image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./proxy
+        push: false
+        tags: marchproxy/proxy:test
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  security-scan:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Run Trivy vulnerability scanner in repo mode
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+
+    - name: Upload Trivy results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+    - name: Run gosec security scanner
+      uses: securego/gosec@master
+      with:
+        args: '-no-fail -fmt sarif -out gosec-results.sarif ./proxy/...'
+
+    - name: Upload gosec results
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: gosec-results.sarif
+
+  integration-test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: [test-go, test-python]
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install test dependencies
+      run: |
+        pip install -r test/requirements.txt
+
+    - name: Start services with docker-compose
+      run: |
+        docker-compose -f docker-compose.test.yml up -d
+        sleep 30  # Wait for services to be ready
+
+    - name: Run integration tests
+      run: |
+        python test/integration/integration_test.py
+
+    - name: Collect docker logs on failure
+      if: failure()
+      run: |
+        docker-compose logs > docker-logs.txt
+        echo "Docker logs collected"
+
+    - name: Upload logs on failure
+      if: failure()
+      uses: actions/upload-artifact@v3
+      with:
+        name: docker-logs
+        path: docker-logs.txt
+
+    - name: Stop services
+      if: always()
+      run: docker-compose down
+
+  license-check:
+    name: License Compliance
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Check Go licenses
+      run: |
+        go install github.com/google/go-licenses@latest
+        cd proxy
+        go-licenses check . --disallowed_types=forbidden,restricted
+
+    - name: Check Python licenses
+      run: |
+        pip install pip-licenses
+        cd manager
+        pip-licenses --fail-on="GPL;LGPL;AGPL" --ignore-packages marchproxy
+
+  release-check:
+    name: Release Readiness
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [lint-go, lint-python, test-go, test-python, build-docker, security-scan, integration-test]
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Check version files
+      run: |
+        if [ ! -f ".version" ]; then
+          echo "Missing .version file"
+          exit 1
+        fi
+        if [ ! -f "VERSION.md" ]; then
+          echo "Missing VERSION.md file"
+          exit 1
+        fi
+
+    - name: Validate CHANGELOG
+      run: |
+        if [ ! -f "CHANGELOG.md" ]; then
+          echo "Missing CHANGELOG.md"
+          exit 1
+        fi
+
+    - name: Check documentation
+      run: |
+        if [ ! -d "docs" ]; then
+          echo "Missing docs directory"
+          exit 1
+        fi

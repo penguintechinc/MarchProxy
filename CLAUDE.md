@@ -63,6 +63,16 @@ Multi-tier packet processing for maximum performance:
 3. Use `.REQUIREMENTS` for original specifications
 4. Update this file when adding significant context
 
+## Critical TODO Management Rule
+🔥 **MANDATORY TODO SYNCHRONIZATION** 🔥
+- `.TODO` file is the single source of truth for project progress
+- **ALWAYS** update `.TODO` file when completing tasks or changing status
+- Mark items as `[x]` when completed, `[ ]` when pending
+- Add new discovered tasks to appropriate phases
+- **NEVER** mark tasks complete in TODO without updating `.TODO` file
+- Sync TodoWrite status with `.TODO` file status regularly
+- If `.TODO` exists, it MUST be kept current and accurate
+
 ## Current Status
 Project fully planned with comprehensive documentation architecture. Ready to begin implementation following the 8-phase development plan.
 

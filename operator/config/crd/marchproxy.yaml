@@ -1,0 +1,144 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: marchproxies.proxy.marchproxy.io
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.13.0
+spec:
+  group: proxy.marchproxy.io
+  names:
+    kind: MarchProxy
+    listKind: MarchProxyList
+    plural: marchproxies
+    singular: marchproxy
+    shortNames:
+    - mp
+  scope: Namespaced
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    subresources:
+      status: {}
+    additionalPrinterColumns:
+    - name: Phase
+      type: string
+      jsonPath: .status.phase
+    - name: Manager Ready
+      type: string
+      jsonPath: .status.manager.readyReplicas
+    - name: Proxy Ready
+      type: string
+      jsonPath: .status.proxy.readyReplicas
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp
+    schema:
+      openAPIV3Schema:
+        description: MarchProxy is the Schema for the marchproxies API
+        type: object
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation of an object.'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this object represents.'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: MarchProxySpec defines the desired state of MarchProxy
+            type: object
+            required:
+            - manager
+            - proxy
+            properties:
+              manager:
+                description: Manager configuration
+                type: object
+                required:
+                - image
+                properties:
+                  replicas:
+                    description: Number of manager replicas
+                    type: integer
+                    format: int32
+                  image:
+                    description: Manager container image
+                    type: object
+                    required:
+                    - repository
+                    properties:
+                      repository:
+                        description: Image repository
+                        type: string
+                      tag:
+                        description: Image tag
+                        type: string
+                      pullPolicy:
+                        description: Image pull policy
+                        type: string
+                        enum:
+                        - Always
+                        - Never
+                        - IfNotPresent
+              proxy:
+                description: Proxy configuration
+                type: object
+                required:
+                - image
+                properties:
+                  replicas:
+                    description: Number of proxy replicas
+                    type: integer
+                    format: int32
+                  image:
+                    description: Proxy container image
+                    type: object
+                    required:
+                    - repository
+                    properties:
+                      repository:
+                        description: Image repository
+                        type: string
+                      tag:
+                        description: Image tag
+                        type: string
+                      pullPolicy:
+                        description: Image pull policy
+                        type: string
+                        enum:
+                        - Always
+                        - Never
+                        - IfNotPresent
+          status:
+            description: MarchProxyStatus defines the observed state of MarchProxy
+            type: object
+            properties:
+              phase:
+                description: Phase represents the current phase of the MarchProxy deployment
+                type: string
+              manager:
+                description: Manager status
+                type: object
+                properties:
+                  readyReplicas:
+                    description: Ready replicas
+                    type: integer
+                    format: int32
+                  replicas:
+                    description: Total replicas
+                    type: integer
+                    format: int32
+              proxy:
+                description: Proxy status
+                type: object
+                properties:
+                  readyReplicas:
+                    description: Ready replicas
+                    type: integer
+                    format: int32
+                  replicas:
+                    description: Total replicas
+                    type: integer
+                    format: int32

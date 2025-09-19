@@ -1,18 +1,22 @@
 version: '3.8'
 
 services:
+  # PostgreSQL Database
   postgres:
     image: postgres:15-alpine
-    container_name: marchproxy_postgres
+    container_name: marchproxy-postgres
     environment:
       POSTGRES_DB: marchproxy
       POSTGRES_USER: marchproxy
-      POSTGRES_PASSWORD: marchproxy_dev_password
-    ports:
-      - "5432:5432"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-marchproxy123}
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./docker/dev/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./database/init:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    networks:
+      - marchproxy-network
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U marchproxy"]
@@ -20,123 +24,174 @@ services:
       timeout: 5s
       retries: 5
 
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: marchproxy-redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis123}
+    volumes:
+      - redis_data:/data
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf
+    ports:
+      - "6379:6379"
+    networks:
+      - marchproxy-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # MarchProxy Manager (Python/py4web)
   manager:
     build:
       context: .
-      dockerfile: docker/manager/Dockerfile
-    container_name: marchproxy_manager
+      dockerfile: Dockerfile
+      target: manager
+    container_name: marchproxy-manager
     environment:
-      # Database configuration
-      DB_URI: postgresql://marchproxy:marchproxy_dev_password@postgres:5432/marchproxy
-      
-      # py4web configuration
-      PY4WEB_APPS_FOLDER: /app
-      PY4WEB_PASSWORD: marchproxy_admin_dev
-      PY4WEB_DASHBOARD_MODE: full
-      
-      # Application configuration
-      PYTHONPATH: /app
-      FLASK_ENV: development
-      
-      # License server configuration (Enterprise)
-      LICENSE_SERVER_URL: https://license.penguintech.io
-      LICENSE_PRODUCT_NAME: marchproxy
-      
-      # TLS/Security configuration
-      TLS_CERT_PATH: /app/certs
-      JWT_SECRET: marchproxy_jwt_secret_dev_change_in_production
-      
-      # Logging configuration
-      LOG_LEVEL: DEBUG
-      SYSLOG_ENDPOINT: 127.0.0.1:514
-    ports:
-      - "8000:8000"
+      - DATABASE_URL=postgresql://marchproxy:${POSTGRES_PASSWORD:-marchproxy123}@postgres:5432/marchproxy
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis123}@redis:6379/0
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-this}
+      - DEBUG=${DEBUG:-false}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - MARCHPROXY_ENV=${MARCHPROXY_ENV:-production}
     volumes:
       - ./manager:/app
-      - ./docker/dev/certs:/app/certs:ro
       - manager_logs:/app/logs
+      - ./certs:/app/certs:ro
+    ports:
+      - "8000:8000"
+    networks:
+      - marchproxy-network
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 40s
 
+  # MarchProxy Proxy (Go)
   proxy:
     build:
       context: .
-      dockerfile: docker/proxy/Dockerfile
-    container_name: marchproxy_proxy
+      dockerfile: Dockerfile
+      target: proxy
+    container_name: marchproxy-proxy
     environment:
-      # Manager connection configuration
-      MANAGER_URL: http://manager:8000
-      CLUSTER_API_KEY: dev_cluster_api_key_change_in_production
-      
-      # Proxy configuration
-      PROXY_LISTEN_PORT: 8080
-      PROXY_ADMIN_PORT: 8081
-      
-      # License configuration
-      LICENSE_SERVER_URL: https://license.penguintech.io
-      
-      # Logging configuration
-      LOG_LEVEL: DEBUG
-      SYSLOG_ENDPOINT: 127.0.0.1:514
-      
-      # Performance configuration
-      GO_MAX_PROCS: 4
-      GOMAXPROCS: 4
-    ports:
-      - "8080:8080"  # Main proxy port
-      - "8081:8081"  # Admin/health/metrics port
+      - MANAGER_URL=http://manager:8000
+      - CLUSTER_API_KEY=${CLUSTER_API_KEY:-default-api-key}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis123}@redis:6379/1
+      - METRICS_ENABLED=true
+      - TRACING_ENABLED=true
+      - JAEGER_ENDPOINT=${JAEGER_ENDPOINT:-http://jaeger:14268/api/traces}
     volumes:
-      - ./proxy:/app
+      - ./proxy/configs:/app/configs:ro
+      - ./certs:/app/certs:ro
       - proxy_logs:/app/logs
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"   # Admin API
+      - "8090:8090"   # Metrics
+    networks:
+      - marchproxy-network
     depends_on:
-      - manager
+      manager:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: unless-stopped
-    cap_add:
-      - NET_ADMIN
-      - SYS_ADMIN
-    privileged: true  # Required for eBPF programs
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8081/healthz"]
+      test: ["CMD", "./marchproxy-health"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 40s
 
-  # Development tools and utilities
-  adminer:
-    image: adminer
-    container_name: marchproxy_adminer
-    ports:
-      - "8082:8080"
-    depends_on:
-      - postgres
-    environment:
-      ADMINER_DEFAULT_SERVER: postgres
-
-  # Syslog server for development
-  syslog:
-    image: balabit/syslog-ng:latest
-    container_name: marchproxy_syslog
-    ports:
-      - "514:514/udp"
-      - "601:601"
+  # Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: marchproxy-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
     volumes:
-      - ./docker/dev/syslog-ng.conf:/etc/syslog-ng/syslog-ng.conf:ro
-      - syslog_logs:/var/log
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - marchproxy-network
     restart: unless-stopped
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: marchproxy-grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin123}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+    ports:
+      - "3000:3000"
+    networks:
+      - marchproxy-network
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  # Jaeger for distributed tracing
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: marchproxy-jaeger
+    environment:
+      - COLLECTOR_ZIPKIN_HTTP_PORT=9411
+    ports:
+      - "5775:5775/udp"
+      - "6831:6831/udp"
+      - "6832:6832/udp"
+      - "5778:5778"
+      - "16686:16686"
+      - "14268:14268"
+      - "14250:14250"
+      - "9411:9411"
+    networks:
+      - marchproxy-network
+    restart: unless-stopped
+
+networks:
+  marchproxy-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
 
 volumes:
   postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
   manager_logs:
+    driver: local
   proxy_logs:
-  syslog_logs:
-
-networks:
-  default:
-    name: marchproxy_network
+    driver: local

@@ -1,0 +1,237 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: marchproxy-proxy
+  namespace: marchproxy
+  labels:
+    app: marchproxy-proxy
+    component: proxy
+    version: v1.0.0
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: marchproxy-proxy
+  template:
+    metadata:
+      labels:
+        app: marchproxy-proxy
+        component: proxy
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: marchproxy-proxy
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      hostNetwork: false
+      dnsPolicy: ClusterFirst
+      containers:
+      - name: proxy
+        image: marchproxy/proxy:v1.0.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: proxy-tcp
+          containerPort: 8080
+          protocol: TCP
+        - name: proxy-udp
+          containerPort: 8080
+          protocol: UDP
+        - name: proxy-quic
+          containerPort: 8443
+          protocol: UDP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        - name: health
+          containerPort: 8888
+          protocol: TCP
+        env:
+        - name: CLUSTER_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: marchproxy-secrets
+              key: cluster-api-key
+        - name: MANAGER_URL
+          value: "http://marchproxy-manager:8000"
+        - name: PROXY_MODE
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        - name: ENABLE_EBPF
+          value: "true"
+        - name: ENABLE_HARDWARE_ACCELERATION
+          value: "false"
+        - name: PROMETHEUS_ENABLED
+          value: "true"
+        - name: HEALTH_CHECK_ENABLED
+          value: "true"
+        - name: CONFIG_REFRESH_INTERVAL
+          value: "60s"
+        - name: GOMAXPROCS
+          value: "2"
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: tls-certs
+          mountPath: /app/certs
+          readOnly: true
+        - name: ebpf-maps
+          mountPath: /sys/fs/bpf
+        - name: proc
+          mountPath: /host/proc
+          readOnly: true
+        - name: sys
+          mountPath: /host/sys
+          readOnly: true
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: health
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /healthz/ready
+            port: health
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /healthz
+            port: health
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 30
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            add:
+            - NET_ADMIN
+            - NET_RAW
+            - SYS_ADMIN
+            drop:
+            - ALL
+          privileged: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+      volumes:
+      - name: config
+        configMap:
+          name: marchproxy-config
+          items:
+          - key: proxy-config.yaml
+            path: proxy.yaml
+      - name: tls-certs
+        secret:
+          secretName: marchproxy-tls
+          defaultMode: 0400
+      - name: ebpf-maps
+        hostPath:
+          path: /sys/fs/bpf
+          type: Directory
+      - name: proc
+        hostPath:
+          path: /proc
+          type: Directory
+      - name: sys
+        hostPath:
+          path: /sys
+          type: Directory
+      nodeSelector:
+        kubernetes.io/arch: amd64
+      tolerations:
+      - key: "marchproxy/proxy"
+        operator: "Equal"
+        value: "true"
+        effect: "NoSchedule"
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - marchproxy-proxy
+              topologyKey: kubernetes.io/hostname
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: marchproxy/proxy-enabled
+                operator: In
+                values:
+                - "true"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: marchproxy-proxy
+  namespace: marchproxy
+  labels:
+    app: marchproxy-proxy
+    component: proxy
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: marchproxy-proxy
+  namespace: marchproxy
+  labels:
+    app: marchproxy-proxy
+    component: proxy
+rules:
+- apiGroups: [""]
+  resources: ["secrets", "configmaps"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "patch"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: marchproxy-proxy
+  namespace: marchproxy
+  labels:
+    app: marchproxy-proxy
+    component: proxy
+subjects:
+- kind: ServiceAccount
+  name: marchproxy-proxy
+  namespace: marchproxy
+roleRef:
+  kind: Role
+  name: marchproxy-proxy
+  apiGroup: rbac.authorization.k8s.io

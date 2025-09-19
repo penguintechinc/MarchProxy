@@ -1,0 +1,207 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: marchproxy-manager
+  namespace: marchproxy
+  labels:
+    app: marchproxy-manager
+    component: manager
+    version: v1.0.0
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  selector:
+    app: marchproxy-manager
+  ports:
+  - name: http
+    port: 8000
+    targetPort: http
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+  sessionAffinity: None
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: marchproxy-manager-headless
+  namespace: marchproxy
+  labels:
+    app: marchproxy-manager
+    component: manager
+    version: v1.0.0
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: marchproxy-manager
+  ports:
+  - name: http
+    port: 8000
+    targetPort: http
+    protocol: TCP
+  publishNotReadyAddresses: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: marchproxy-proxy
+  namespace: marchproxy
+  labels:
+    app: marchproxy-proxy
+    component: proxy
+    version: v1.0.0
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
+    prometheus.io/path: "/metrics"
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    service.beta.kubernetes.io/aws-load-balancer-backend-protocol: "tcp"
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+spec:
+  type: LoadBalancer
+  selector:
+    app: marchproxy-proxy
+  ports:
+  - name: proxy-tcp
+    port: 8080
+    targetPort: proxy-tcp
+    protocol: TCP
+  - name: proxy-udp
+    port: 8080
+    targetPort: proxy-udp
+    protocol: UDP
+  - name: proxy-quic
+    port: 8443
+    targetPort: proxy-quic
+    protocol: UDP
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+  - name: health
+    port: 8888
+    targetPort: health
+    protocol: TCP
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 3600
+  loadBalancerSourceRanges:
+  - 10.0.0.0/8
+  - 172.16.0.0/12
+  - 192.168.0.0/16
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: marchproxy-proxy-headless
+  namespace: marchproxy
+  labels:
+    app: marchproxy-proxy
+    component: proxy
+    version: v1.0.0
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: marchproxy-proxy
+  ports:
+  - name: proxy-tcp
+    port: 8080
+    targetPort: proxy-tcp
+    protocol: TCP
+  - name: proxy-udp
+    port: 8080
+    targetPort: proxy-udp
+    protocol: UDP
+  - name: proxy-quic
+    port: 8443
+    targetPort: proxy-quic
+    protocol: UDP
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+  - name: health
+    port: 8888
+    targetPort: health
+    protocol: TCP
+  publishNotReadyAddresses: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgresql
+  namespace: marchproxy
+  labels:
+    app: postgresql
+    component: database
+spec:
+  type: ClusterIP
+  selector:
+    app: postgresql
+  ports:
+  - name: postgresql
+    port: 5432
+    targetPort: 5432
+    protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: marchproxy
+  labels:
+    app: redis
+    component: cache
+spec:
+  type: ClusterIP
+  selector:
+    app: redis
+  ports:
+  - name: redis
+    port: 6379
+    targetPort: 6379
+    protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: marchproxy
+  labels:
+    app: prometheus
+    component: monitoring
+spec:
+  type: ClusterIP
+  selector:
+    app: prometheus
+  ports:
+  - name: web
+    port: 9090
+    targetPort: 9090
+    protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: marchproxy
+  labels:
+    app: grafana
+    component: monitoring
+spec:
+  type: ClusterIP
+  selector:
+    app: grafana
+  ports:
+  - name: web
+    port: 3000
+    targetPort: 3000
+    protocol: TCP

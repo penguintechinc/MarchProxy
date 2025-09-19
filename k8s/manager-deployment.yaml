@@ -1,0 +1,202 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: marchproxy-manager
+  namespace: marchproxy
+  labels:
+    app: marchproxy-manager
+    component: manager
+    version: v1.0.0
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: marchproxy-manager
+  template:
+    metadata:
+      labels:
+        app: marchproxy-manager
+        component: manager
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: marchproxy-manager
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: manager
+        image: marchproxy/manager:v1.0.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 8000
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: marchproxy-secrets
+              key: database-url
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: marchproxy-secrets
+              key: jwt-secret
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: marchproxy-secrets
+              key: redis-url
+        - name: LICENSE_SERVER_URL
+          value: "https://license.penguintech.io"
+        - name: CLUSTER_MODE
+          value: "enterprise"
+        - name: LOG_LEVEL
+          value: "info"
+        - name: PROMETHEUS_ENABLED
+          value: "true"
+        - name: HEALTH_CHECK_ENABLED
+          value: "true"
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: tls-certs
+          mountPath: /app/certs
+          readOnly: true
+        - name: temp
+          mountPath: /tmp
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /healthz/ready
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 30
+      volumes:
+      - name: config
+        configMap:
+          name: marchproxy-config
+          items:
+          - key: manager-config.yaml
+            path: manager.yaml
+      - name: tls-certs
+        secret:
+          secretName: marchproxy-tls
+          defaultMode: 0400
+      - name: temp
+        emptyDir:
+          sizeLimit: 1Gi
+      nodeSelector:
+        kubernetes.io/arch: amd64
+      tolerations:
+      - key: "marchproxy/manager"
+        operator: "Equal"
+        value: "true"
+        effect: "NoSchedule"
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - marchproxy-manager
+              topologyKey: kubernetes.io/hostname
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: marchproxy-manager
+  namespace: marchproxy
+  labels:
+    app: marchproxy-manager
+    component: manager
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: marchproxy-manager
+  namespace: marchproxy
+  labels:
+    app: marchproxy-manager
+    component: manager
+rules:
+- apiGroups: [""]
+  resources: ["secrets", "configmaps"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "patch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: marchproxy-manager
+  namespace: marchproxy
+  labels:
+    app: marchproxy-manager
+    component: manager
+subjects:
+- kind: ServiceAccount
+  name: marchproxy-manager
+  namespace: marchproxy
+roleRef:
+  kind: Role
+  name: marchproxy-manager
+  apiGroup: rbac.authorization.k8s.io

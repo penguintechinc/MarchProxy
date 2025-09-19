@@ -1,0 +1,108 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "marchproxy.manager.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "marchproxy.manager.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.manager.autoscaling.enabled }}
+  replicas: {{ .Values.manager.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "marchproxy.manager.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.global.commonAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "marchproxy.manager.selectorLabels" . | nindent 8 }}
+        {{- with .Values.global.commonLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "marchproxy.manager.serviceAccountName" . }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: manager
+          image: {{ include "marchproxy.manager.image" . }}
+          imagePullPolicy: {{ .Values.manager.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "marchproxy.fullname" . }}-secrets
+                  key: database-url
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "marchproxy.fullname" . }}-secrets
+                  key: jwt-secret
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "marchproxy.fullname" . }}-secrets
+                  key: redis-url
+            - name: LOG_LEVEL
+              value: {{ .Values.manager.config.logLevel }}
+            - name: CLUSTER_MODE
+              value: {{ .Values.manager.config.clusterMode }}
+            - name: PROMETHEUS_ENABLED
+              value: {{ .Values.manager.config.prometheusEnabled | quote }}
+            - name: HEALTH_CHECK_ENABLED
+              value: {{ .Values.manager.config.healthCheckEnabled | quote }}
+            {{- with .Values.manager.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz/ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.manager.resources | nindent 12 }}
+          {{- with .Values.manager.volumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.manager.volumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.manager.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.manager.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.manager.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

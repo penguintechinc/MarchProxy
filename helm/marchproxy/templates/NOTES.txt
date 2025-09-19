@@ -1,0 +1,53 @@
+1. Get the application URL by running these commands:
+{{- if .Values.manager.ingress.enabled }}
+{{- range $host := .Values.manager.ingress.hosts }}
+  {{- range .paths }}
+  http{{ if $.Values.manager.ingress.tls }}s{{ end }}://{{ $host.host }}{{ .path }}
+  {{- end }}
+{{- end }}
+{{- else if contains "NodePort" .Values.manager.service.type }}
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "marchproxy.manager.fullname" . }})
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo http://$NODE_IP:$NODE_PORT
+{{- else if contains "LoadBalancer" .Values.manager.service.type }}
+     NOTE: It may take a few minutes for the LoadBalancer IP to be available.
+           You can watch the status of by running 'kubectl get --namespace {{ .Release.Namespace }} svc -w {{ include "marchproxy.manager.fullname" . }}'
+  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "marchproxy.manager.fullname" . }} --template "{{"{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}"}}")
+  echo http://$SERVICE_IP:{{ .Values.manager.service.port }}
+{{- else if contains "ClusterIP" .Values.manager.service.type }}
+  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "marchproxy.name" . }},app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=manager" -o jsonpath="{.items[0].metadata.name}")
+  export CONTAINER_PORT=$(kubectl get pod --namespace {{ .Release.Namespace }} $POD_NAME -o jsonpath="{.spec.containers[0].ports[0].containerPort}")
+  echo "Visit http://127.0.0.1:8080 to use your application"
+  kubectl --namespace {{ .Release.Namespace }} port-forward $POD_NAME 8080:$CONTAINER_PORT
+{{- end }}
+
+2. Check the proxy service status:
+{{- if contains "LoadBalancer" .Values.proxy.service.type }}
+  export PROXY_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "marchproxy.proxy.fullname" . }} --template "{{"{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}"}}")
+  echo "Proxy available at: $PROXY_IP:{{ .Values.proxy.service.tcpPort }}"
+{{- end }}
+
+3. Monitor your deployment:
+  kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/instance={{ .Release.Name }}"
+
+4. Access logs:
+  kubectl logs --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "marchproxy.name" . }}" -f
+
+5. Health checks:
+  kubectl get --namespace {{ .Release.Namespace }} endpoints
+
+{{- if .Values.monitoring.prometheus.enabled }}
+6. Access Prometheus metrics:
+  kubectl port-forward --namespace {{ .Release.Namespace }} svc/prometheus 9090:9090
+  Open http://localhost:9090 in your browser
+{{- end }}
+
+{{- if .Values.monitoring.grafana.enabled }}
+7. Access Grafana dashboard:
+  kubectl port-forward --namespace {{ .Release.Namespace }} svc/grafana 3000:3000
+  Open http://localhost:3000 in your browser
+  Username: admin
+  Password: {{ .Values.monitoring.grafana.adminPassword }}
+{{- end }}
+
+For more information about MarchProxy, visit: https://github.com/marchproxy/marchproxy
