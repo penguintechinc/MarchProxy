@@ -324,6 +324,240 @@ def clusters():
             return {'error': 'Failed to create cluster'}
 
 
+@action('/api/clusters/<cluster_id:int>', methods=['GET', 'PUT', 'DELETE'])
+@action.uses(auth, auth.user)
+@enable_cors()
+def cluster_detail(cluster_id):
+    """Individual cluster management"""
+    user = auth.get_user()
+
+    # Check access permissions
+    if not user.get('is_admin'):
+        user_role = UserClusterAssignmentModel.check_user_cluster_access(db, user['id'], cluster_id)
+        if not user_role:
+            abort(403)
+
+    cluster = db.clusters[cluster_id]
+    if not cluster:
+        abort(404)
+
+    if request.method == 'GET':
+        active_proxies = ClusterModel.count_active_proxies(db, cluster_id)
+        return {
+            'cluster': {
+                'id': cluster.id,
+                'name': cluster.name,
+                'description': cluster.description,
+                'syslog_endpoint': cluster.syslog_endpoint,
+                'log_auth': cluster.log_auth,
+                'log_netflow': cluster.log_netflow,
+                'log_debug': cluster.log_debug,
+                'is_active': cluster.is_active,
+                'is_default': cluster.is_default,
+                'max_proxies': cluster.max_proxies,
+                'active_proxies': active_proxies,
+                'created_at': cluster.created_at,
+                'updated_at': cluster.updated_at
+            }
+        }
+
+    elif request.method == 'PUT':
+        # Only admins can update clusters
+        if not check_permission(auth, 'update_clusters'):
+            abort(403)
+
+        data = request.json
+        update_data = {'updated_at': datetime.utcnow()}
+
+        # Update allowed fields
+        if 'name' in data:
+            update_data['name'] = data['name']
+        if 'description' in data:
+            update_data['description'] = data['description']
+        if 'syslog_endpoint' in data:
+            update_data['syslog_endpoint'] = data['syslog_endpoint']
+        if 'log_auth' in data:
+            update_data['log_auth'] = data['log_auth']
+        if 'log_netflow' in data:
+            update_data['log_netflow'] = data['log_netflow']
+        if 'log_debug' in data:
+            update_data['log_debug'] = data['log_debug']
+        if 'max_proxies' in data:
+            update_data['max_proxies'] = data['max_proxies']
+
+        cluster.update_record(**update_data)
+        return {'message': 'Cluster updated successfully'}
+
+    elif request.method == 'DELETE':
+        # Only admins can delete clusters
+        if not check_permission(auth, 'delete_clusters'):
+            abort(403)
+
+        # Don't allow deleting default cluster
+        if cluster.is_default:
+            response.status = 400
+            return {'error': 'Cannot delete default cluster'}
+
+        # Soft delete - deactivate cluster
+        cluster.update_record(is_active=False, updated_at=datetime.utcnow())
+        return {'message': 'Cluster deactivated successfully'}
+
+
+@action('/api/clusters/<cluster_id:int>/rotate-key', methods=['POST'])
+@action.uses(auth, auth.user)
+@enable_cors()
+def rotate_cluster_key(cluster_id):
+    """Rotate cluster API key"""
+    user = auth.get_user()
+
+    # Only admins can rotate keys
+    if not check_permission(auth, 'update_clusters'):
+        abort(403)
+
+    cluster = db.clusters[cluster_id]
+    if not cluster:
+        abort(404)
+
+    try:
+        new_api_key = ClusterModel.rotate_api_key(db, cluster_id)
+        if new_api_key:
+            return {
+                'api_key': new_api_key,
+                'message': 'API key rotated successfully'
+            }
+        else:
+            response.status = 500
+            return {'error': 'Failed to rotate API key'}
+    except Exception as e:
+        logger.error(f"API key rotation failed: {e}")
+        response.status = 500
+        return {'error': 'Failed to rotate API key'}
+
+
+@action('/api/clusters/<cluster_id:int>/logging', methods=['PUT'])
+@action.uses(auth, auth.user)
+@enable_cors()
+def update_cluster_logging(cluster_id):
+    """Update cluster logging configuration"""
+    user = auth.get_user()
+
+    # Only admins can update logging config
+    if not check_permission(auth, 'update_clusters'):
+        abort(403)
+
+    cluster = db.clusters[cluster_id]
+    if not cluster:
+        abort(404)
+
+    data = request.json
+    success = ClusterModel.update_logging_config(
+        db, cluster_id,
+        syslog_endpoint=data.get('syslog_endpoint'),
+        log_auth=data.get('log_auth'),
+        log_netflow=data.get('log_netflow'),
+        log_debug=data.get('log_debug')
+    )
+
+    if success:
+        return {'message': 'Logging configuration updated successfully'}
+    else:
+        response.status = 500
+        return {'error': 'Failed to update logging configuration'}
+
+
+@action('/api/clusters/<cluster_id:int>/users', methods=['GET', 'POST'])
+@action.uses(auth, auth.user)
+@enable_cors()
+def cluster_users(cluster_id):
+    """Manage cluster user assignments"""
+    user = auth.get_user()
+
+    # Only admins can manage cluster users
+    if not check_permission(auth, 'update_clusters'):
+        abort(403)
+
+    cluster = db.clusters[cluster_id]
+    if not cluster:
+        abort(404)
+
+    if request.method == 'GET':
+        # Get all users assigned to this cluster
+        assignments = db(
+            (db.user_cluster_assignments.cluster_id == cluster_id) &
+            (db.user_cluster_assignments.is_active == True) &
+            (db.auth_user.id == db.user_cluster_assignments.user_id)
+        ).select(
+            db.user_cluster_assignments.ALL,
+            db.auth_user.id,
+            db.auth_user.email,
+            db.auth_user.first_name,
+            db.auth_user.last_name,
+            left=db.auth_user.on(db.auth_user.id == db.user_cluster_assignments.user_id)
+        )
+
+        return {
+            'users': [
+                {
+                    'user_id': assignment.auth_user.id,
+                    'email': assignment.auth_user.email,
+                    'first_name': assignment.auth_user.first_name,
+                    'last_name': assignment.auth_user.last_name,
+                    'role': assignment.user_cluster_assignments.role,
+                    'assigned_at': assignment.user_cluster_assignments.assigned_at
+                }
+                for assignment in assignments
+            ]
+        }
+
+    elif request.method == 'POST':
+        # Assign user to cluster
+        data = request.json
+        target_user_id = data.get('user_id')
+        role = data.get('role', 'service_owner')
+
+        # Validate user exists
+        target_user = db.auth_user[target_user_id]
+        if not target_user:
+            response.status = 400
+            return {'error': 'User not found'}
+
+        success = UserClusterAssignmentModel.assign_user_to_cluster(
+            db, target_user_id, cluster_id, role, user['id']
+        )
+
+        if success:
+            return {'message': 'User assigned to cluster successfully'}
+        else:
+            response.status = 500
+            return {'error': 'Failed to assign user to cluster'}
+
+
+@action('/api/clusters/<cluster_id:int>/config', methods=['GET'])
+@enable_cors()
+def cluster_config(cluster_id):
+    """Get cluster configuration for proxy (API key authenticated)"""
+    # This endpoint uses API key authentication, not user auth
+    auth_header = request.headers.get('Authorization', '')
+    api_key = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+
+    if not api_key:
+        response.status = 401
+        return {'error': 'API key required'}
+
+    # Validate API key and get cluster info
+    cluster_info = ClusterModel.validate_api_key(db, api_key)
+    if not cluster_info or cluster_info['cluster_id'] != cluster_id:
+        response.status = 401
+        return {'error': 'Invalid API key for cluster'}
+
+    # Get complete cluster configuration
+    config = ClusterModel.get_cluster_config(db, cluster_id)
+    if not config:
+        abort(404)
+
+    return config
+
+
 # User management using py4web auth
 @action('/api/users', methods=['GET', 'POST'])
 @action.uses(auth)

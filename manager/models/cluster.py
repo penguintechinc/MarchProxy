@@ -31,7 +31,7 @@ class ClusterModel:
             Field('is_active', type='boolean', default=True),
             Field('is_default', type='boolean', default=False),
             Field('max_proxies', type='integer', default=3),
-            Field('created_by', type='reference users', required=True),
+            Field('created_by', type='reference auth_user', required=True),
             Field('created_at', type='datetime', default=datetime.utcnow),
             Field('updated_at', type='datetime', update=datetime.utcnow),
             Field('metadata', type='json'),
@@ -228,10 +228,10 @@ class UserClusterAssignmentModel:
         """Define user cluster assignment table"""
         return db.define_table(
             'user_cluster_assignments',
-            Field('user_id', type='reference users', required=True),
+            Field('user_id', type='reference auth_user', required=True),
             Field('cluster_id', type='reference clusters', required=True),
             Field('role', type='string', default='service_owner', length=50),
-            Field('assigned_by', type='reference users', required=True),
+            Field('assigned_by', type='reference auth_user', required=True),
             Field('assigned_at', type='datetime', default=datetime.utcnow),
             Field('is_active', type='boolean', default=True),
         )
