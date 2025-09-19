@@ -3,10 +3,7 @@ package auth
 import (
 	"crypto/hmac"
 	"crypto/sha256"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/penguintech/marchproxy/internal/manager"
@@ -21,8 +18,8 @@ const (
 	AuthTypeNone   AuthType = "none"
 )
 
-// JWTClaims represents JWT token claims
-type JWTClaims struct {
+// BasicJWTClaims represents basic JWT token claims for service authentication
+type BasicJWTClaims struct {
 	ServiceID int    `json:"service_id"`
 	ServiceName string `json:"service_name"`
 	IssuedAt  int64  `json:"iat"`
@@ -93,74 +90,21 @@ func (a *Authenticator) validateBase64Token(service *manager.Service, token stri
 	return nil
 }
 
-// validateJWTToken validates a JWT token
+// validateJWTToken validates a JWT token using the simplified JWT validation
 func (a *Authenticator) validateJWTToken(service *manager.Service, token string) error {
 	if service.JWTSecret == "" {
 		return fmt.Errorf("no JWT secret configured for service %s", service.Name)
 	}
-	
-	// Split JWT token into parts
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
-		return fmt.Errorf("invalid JWT format for service %s", service.Name)
-	}
-	
-	header := parts[0]
-	payload := parts[1]
-	signature := parts[2]
-	
-	// Verify signature
-	expectedSig, err := a.generateJWTSignature(header+"."+payload, service.JWTSecret)
+
+	// Use the simplified JWT validation from jwt.go
+	_, err := ValidateJWTToken(token, service.JWTSecret, service.ID)
 	if err != nil {
-		return fmt.Errorf("failed to generate expected signature: %w", err)
+		return fmt.Errorf("JWT validation failed for service %s: %w", service.Name, err)
 	}
-	
-	// Constant-time comparison
-	expectedSigBytes, err := base64.RawURLEncoding.DecodeString(expectedSig)
-	if err != nil {
-		return fmt.Errorf("failed to decode expected signature: %w", err)
-	}
-	
-	actualSigBytes, err := base64.RawURLEncoding.DecodeString(signature)
-	if err != nil {
-		return fmt.Errorf("failed to decode provided signature: %w", err)
-	}
-	
-	if !hmac.Equal(expectedSigBytes, actualSigBytes) {
-		return fmt.Errorf("invalid JWT signature for service %s", service.Name)
-	}
-	
-	// Decode and validate payload
-	payloadBytes, err := base64.RawURLEncoding.DecodeString(payload)
-	if err != nil {
-		return fmt.Errorf("failed to decode JWT payload: %w", err)
-	}
-	
-	var claims JWTClaims
-	if err := json.Unmarshal(payloadBytes, &claims); err != nil {
-		return fmt.Errorf("failed to parse JWT claims: %w", err)
-	}
-	
-	// Validate claims
-	now := time.Now().Unix()
-	if claims.ExpiresAt > 0 && now > claims.ExpiresAt {
-		return fmt.Errorf("JWT token expired for service %s", service.Name)
-	}
-	
-	if claims.ServiceID != service.ID {
-		return fmt.Errorf("JWT service ID mismatch for service %s", service.Name)
-	}
-	
+
 	return nil
 }
 
-// generateJWTSignature generates HMAC-SHA256 signature for JWT
-func (a *Authenticator) generateJWTSignature(data, secret string) (string, error) {
-	h := hmac.New(sha256.New, []byte(secret))
-	h.Write([]byte(data))
-	signature := h.Sum(nil)
-	return base64.RawURLEncoding.EncodeToString(signature), nil
-}
 
 // UpdateServices updates the authenticator with new service configuration
 func (a *Authenticator) UpdateServices(services []manager.Service) {
@@ -188,50 +132,17 @@ func (a *Authenticator) GenerateJWTToken(serviceID int) (string, error) {
 	if !exists {
 		return "", fmt.Errorf("service %d not found", serviceID)
 	}
-	
+
 	if service.JWTSecret == "" {
 		return "", fmt.Errorf("no JWT secret configured for service %s", service.Name)
 	}
-	
-	// Create header
-	header := map[string]interface{}{
-		"typ": "JWT",
-		"alg": "HS256",
+
+	// Default expiry duration
+	expiryDuration := time.Hour
+	if service.JWTExpiry > 0 {
+		expiryDuration = time.Duration(service.JWTExpiry) * time.Second
 	}
-	
-	headerBytes, err := json.Marshal(header)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal header: %w", err)
-	}
-	
-	headerEncoded := base64.RawURLEncoding.EncodeToString(headerBytes)
-	
-	// Create claims
-	now := time.Now().Unix()
-	expiry := now + int64(service.JWTExpiry)
-	if service.JWTExpiry == 0 {
-		expiry = now + 3600 // Default 1 hour
-	}
-	
-	claims := JWTClaims{
-		ServiceID:   service.ID,
-		ServiceName: service.Name,
-		IssuedAt:    now,
-		ExpiresAt:   expiry,
-	}
-	
-	claimsBytes, err := json.Marshal(claims)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal claims: %w", err)
-	}
-	
-	claimsEncoded := base64.RawURLEncoding.EncodeToString(claimsBytes)
-	
-	// Generate signature
-	signature, err := a.generateJWTSignature(headerEncoded+"."+claimsEncoded, service.JWTSecret)
-	if err != nil {
-		return "", fmt.Errorf("failed to generate signature: %w", err)
-	}
-	
-	return headerEncoded + "." + claimsEncoded + "." + signature, nil
+
+	// Use the simplified JWT generation from jwt.go
+	return GenerateJWTToken(service.ID, service.Name, service.JWTSecret, expiryDuration)
 }

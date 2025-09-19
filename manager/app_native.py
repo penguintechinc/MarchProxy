@@ -8,7 +8,7 @@ Licensed under GNU Affero General Public License v3.0
 import os
 import sys
 from py4web import action, request, response, abort, redirect, URL
-from py4web.utils.cors import enable_cors
+from py4web.utils.cors import CORS
 from py4web.utils.auth import Auth
 from pydal import DAL, Field
 import logging
@@ -31,6 +31,9 @@ from models.license import LicenseCacheModel, LicenseManager
 from models.service import ServiceModel, UserServiceAssignmentModel
 from models.mapping import MappingModel
 from models.certificate import CertificateModel
+from models.rate_limiting import RateLimitModel, RateLimitManager
+from models.syslog_client import ClusterSyslogManager
+from models.structured_logging import structured_logger, get_structured_logger, log_api_request
 
 # Configure logging
 logging.basicConfig(
@@ -65,6 +68,7 @@ ServiceModel.define_table(db)
 UserServiceAssignmentModel.define_table(db)
 MappingModel.define_table(db)
 CertificateModel.define_table(db)
+RateLimitModel.define_table(db)
 
 # Commit database changes
 db.commit()
@@ -77,21 +81,26 @@ token_manager = APITokenManager(auth)
 LICENSE_KEY = os.environ.get('LICENSE_KEY')
 license_manager = LicenseManager(db, LICENSE_KEY)
 
+# Initialize rate limit manager
+rate_limit_manager = RateLimitManager(db)
+
+# Initialize syslog manager
+syslog_manager = ClusterSyslogManager(db)
+
 # Setup auth groups and permissions
 groups = setup_auth_groups(auth)
 
 
 # Authentication endpoints using py4web native features
 @action('/auth/<path:path>')
-@action.uses(auth)
+@action.uses(auth, CORS())
 def auth_handler(path):
     """Handle py4web native auth endpoints"""
     return auth.navbar
 
 
 @action('/api/auth/profile', methods=['GET', 'PUT'])
-@action.uses(auth, auth.user)
-@enable_cors()
+@action.uses(auth, auth.user, CORS())
 def profile():
     """Get/update user profile"""
     user = auth.get_user()
@@ -141,8 +150,8 @@ def profile():
 
 
 @action('/api/auth/2fa/enable', methods=['POST'])
-@action.uses(auth, auth.user)
-@enable_cors()
+@action.uses(auth, auth.user, CORS())
+
 def enable_2fa():
     """Enable 2FA for current user"""
     user = auth.get_user()
@@ -162,8 +171,8 @@ def enable_2fa():
 
 
 @action('/api/auth/2fa/verify', methods=['POST'])
-@action.uses(auth, auth.user)
-@enable_cors()
+@action.uses(auth, auth.user, CORS())
+
 def verify_2fa():
     """Complete 2FA setup"""
     user = auth.get_user()
@@ -181,8 +190,8 @@ def verify_2fa():
 
 
 @action('/api/auth/2fa/disable', methods=['POST'])
-@action.uses(auth, auth.user)
-@enable_cors()
+@action.uses(auth, auth.user, CORS())
+
 def disable_2fa():
     """Disable 2FA for current user"""
     user = auth.get_user()
@@ -201,8 +210,8 @@ def disable_2fa():
 
 # API Token management
 @action('/api/auth/tokens', methods=['GET', 'POST'])
-@action.uses(auth, auth.user)
-@enable_cors()
+@action.uses(auth, auth.user, CORS())
+
 def api_tokens():
     """Manage API tokens"""
     user = auth.get_user()
@@ -245,8 +254,8 @@ def api_tokens():
 
 # Cluster management using py4web auth
 @action('/api/clusters', methods=['GET', 'POST'])
-@action.uses(auth, auth.user)
-@enable_cors()
+@action.uses(auth, auth.user, CORS())
+
 def clusters():
     """Cluster management"""
     user = auth.get_user()
@@ -325,8 +334,8 @@ def clusters():
 
 
 @action('/api/clusters/<cluster_id:int>', methods=['GET', 'PUT', 'DELETE'])
-@action.uses(auth, auth.user)
-@enable_cors()
+@action.uses(auth, auth.user, CORS())
+
 def cluster_detail(cluster_id):
     """Individual cluster management"""
     user = auth.get_user()
@@ -404,8 +413,8 @@ def cluster_detail(cluster_id):
 
 
 @action('/api/clusters/<cluster_id:int>/rotate-key', methods=['POST'])
-@action.uses(auth, auth.user)
-@enable_cors()
+@action.uses(auth, auth.user, CORS())
+
 def rotate_cluster_key(cluster_id):
     """Rotate cluster API key"""
     user = auth.get_user()
@@ -435,8 +444,8 @@ def rotate_cluster_key(cluster_id):
 
 
 @action('/api/clusters/<cluster_id:int>/logging', methods=['PUT'])
-@action.uses(auth, auth.user)
-@enable_cors()
+@action.uses(auth, auth.user, CORS())
+
 def update_cluster_logging(cluster_id):
     """Update cluster logging configuration"""
     user = auth.get_user()
@@ -466,8 +475,8 @@ def update_cluster_logging(cluster_id):
 
 
 @action('/api/clusters/<cluster_id:int>/users', methods=['GET', 'POST'])
-@action.uses(auth, auth.user)
-@enable_cors()
+@action.uses(auth, auth.user, CORS())
+
 def cluster_users(cluster_id):
     """Manage cluster user assignments"""
     user = auth.get_user()
@@ -533,7 +542,7 @@ def cluster_users(cluster_id):
 
 
 @action('/api/clusters/<cluster_id:int>/config', methods=['GET'])
-@enable_cors()
+
 def cluster_config(cluster_id):
     """Get cluster configuration for proxy (API key authenticated)"""
     # This endpoint uses API key authentication, not user auth
@@ -560,8 +569,8 @@ def cluster_config(cluster_id):
 
 # User management using py4web auth
 @action('/api/users', methods=['GET', 'POST'])
-@action.uses(auth)
-@enable_cors()
+@action.uses(auth, CORS())
+
 def users():
     """User management (admin only)"""
     if not auth.user_id:
@@ -632,7 +641,7 @@ def users():
 
 # Proxy registration and management using API key authentication
 @action('/api/proxy/register', methods=['POST'])
-@enable_cors()
+
 def proxy_register():
     """Register proxy server with cluster API key"""
     data = request.json
@@ -666,7 +675,7 @@ def proxy_register():
 
 
 @action('/api/proxy/heartbeat', methods=['POST'])
-@enable_cors()
+
 def proxy_heartbeat():
     """Proxy heartbeat and status update"""
     data = request.json
@@ -703,7 +712,7 @@ def proxy_heartbeat():
 
 
 @action('/api/proxy/config/<proxy_name>', methods=['GET'])
-@enable_cors()
+
 def proxy_config(proxy_name):
     """Get configuration for specific proxy"""
     auth_header = request.headers.get('Authorization', '')
@@ -722,8 +731,8 @@ def proxy_config(proxy_name):
 
 
 @action('/api/proxy/stats/<cluster_id:int>', methods=['GET'])
-@action.uses(auth, auth.user)
-@enable_cors()
+@action.uses(auth, auth.user, CORS())
+
 def proxy_stats(cluster_id):
     """Get proxy statistics for cluster"""
     user = auth.get_user()
@@ -739,8 +748,8 @@ def proxy_stats(cluster_id):
 
 
 @action('/api/proxy/<proxy_id:int>/metrics', methods=['GET'])
-@action.uses(auth, auth.user)
-@enable_cors()
+@action.uses(auth, auth.user, CORS())
+
 def proxy_metrics(proxy_id):
     """Get metrics for specific proxy"""
     user = auth.get_user()
@@ -766,7 +775,7 @@ def proxy_metrics(proxy_id):
 
 
 @action('/api/proxy/license-status', methods=['GET'])
-@enable_cors()
+
 def proxy_license_status():
     """Check license status for proxy count validation"""
     auth_header = request.headers.get('Authorization', '')
@@ -814,8 +823,8 @@ def proxy_license_status():
 
 # License validation endpoints (async)
 @action('/api/license/validate', methods=['POST'])
-@action.uses(auth, auth.user)
-@enable_cors()
+@action.uses(auth, auth.user, CORS())
+
 async def validate_license():
     """Validate license key (admin only)"""
     user = auth.get_user()
@@ -844,8 +853,8 @@ async def validate_license():
 
 
 @action('/api/license/status', methods=['GET'])
-@action.uses(auth, auth.user)
-@enable_cors()
+@action.uses(auth, auth.user, CORS())
+
 async def license_status():
     """Get current license status (admin only)"""
     user = auth.get_user()
@@ -868,8 +877,8 @@ async def license_status():
 
 
 @action('/api/license/features', methods=['GET'])
-@action.uses(auth, auth.user)
-@enable_cors()
+@action.uses(auth, auth.user, CORS())
+
 async def license_features():
     """Get available features for current user"""
     user = auth.get_user()
@@ -897,8 +906,8 @@ async def license_features():
 
 
 @action('/api/license/check-feature/<feature>', methods=['GET'])
-@action.uses(auth, auth.user)
-@enable_cors()
+@action.uses(auth, auth.user, CORS())
+
 async def check_feature(feature):
     """Check if specific feature is enabled"""
     user = auth.get_user()
@@ -922,8 +931,8 @@ async def check_feature(feature):
 
 
 @action('/api/license/keepalive', methods=['POST'])
-@action.uses(auth, auth.user)
-@enable_cors()
+@action.uses(auth, auth.user, CORS())
+
 async def send_license_keepalive():
     """Send keepalive to license server (admin only)"""
     user = auth.get_user()
@@ -949,8 +958,8 @@ async def send_license_keepalive():
 
 
 @action('/api/license/keepalive-health', methods=['GET'])
-@action.uses(auth, auth.user)
-@enable_cors()
+@action.uses(auth, auth.user, CORS())
+
 def get_keepalive_health():
     """Get keepalive health status (admin only)"""
     user = auth.get_user()
@@ -970,9 +979,1061 @@ def get_keepalive_health():
         return {'error': f'Keepalive health check failed: {str(e)}'}
 
 
+# Service management endpoints
+@action('/api/services', methods=['GET', 'POST'])
+@action.uses(auth, auth.user, CORS())
+
+def services():
+    """Service management"""
+    user = auth.get_user()
+
+    if request.method == 'GET':
+        cluster_id = request.vars.get('cluster_id')
+
+        if cluster_id:
+            # Get services for specific cluster
+            if not user.get('is_admin'):
+                # Check user has access to this cluster
+                user_role = UserClusterAssignmentModel.check_user_cluster_access(db, user['id'], int(cluster_id))
+                if not user_role:
+                    abort(403)
+
+            services = ServiceModel.get_cluster_services(db, int(cluster_id), None if user.get('is_admin') else user['id'])
+        else:
+            # Get all services user has access to
+            if user.get('is_admin'):
+                services = db(db.services.is_active == True).select(
+                    db.services.ALL,
+                    db.clusters.name,
+                    left=db.clusters.on(db.clusters.id == db.services.cluster_id),
+                    orderby=db.services.name
+                )
+                services = [
+                    {
+                        'id': service.services.id,
+                        'name': service.services.name,
+                        'ip_fqdn': service.services.ip_fqdn,
+                        'port': service.services.port,
+                        'protocol': service.services.protocol,
+                        'collection': service.services.collection,
+                        'cluster_id': service.services.cluster_id,
+                        'cluster_name': service.clusters.name,
+                        'auth_type': service.services.auth_type,
+                        'tls_enabled': service.services.tls_enabled,
+                        'health_check_enabled': service.services.health_check_enabled,
+                        'created_at': service.services.created_at
+                    }
+                    for service in services
+                ]
+            else:
+                # Get services assigned to user
+                user_services = UserServiceAssignmentModel.get_user_services(db, user['id'])
+                services = user_services
+
+        return {'services': services}
+
+    elif request.method == 'POST':
+        # Create new service
+        if not check_permission(auth, 'create_services'):
+            abort(403)
+
+        data = request.json
+
+        # Validate cluster access
+        cluster_id = data.get('cluster_id')
+        if not user.get('is_admin'):
+            user_role = UserClusterAssignmentModel.check_user_cluster_access(db, user['id'], cluster_id)
+            if not user_role:
+                abort(403)
+
+        try:
+            service_id = ServiceModel.create_service(
+                db,
+                name=data['name'],
+                ip_fqdn=data['ip_fqdn'],
+                port=data['port'],
+                cluster_id=cluster_id,
+                created_by=user['id'],
+                protocol=data.get('protocol', 'tcp'),
+                collection=data.get('collection'),
+                auth_type=data.get('auth_type', 'none'),
+                tls_enabled=data.get('tls_enabled', False),
+                tls_verify=data.get('tls_verify', True)
+            )
+
+            service = db.services[service_id]
+            return {
+                'service': {
+                    'id': service.id,
+                    'name': service.name,
+                    'ip_fqdn': service.ip_fqdn,
+                    'port': service.port,
+                    'protocol': service.protocol,
+                    'cluster_id': service.cluster_id,
+                    'auth_type': service.auth_type,
+                    'created_at': service.created_at
+                },
+                'message': 'Service created successfully'
+            }
+
+        except Exception as e:
+            logger.error(f"Service creation failed: {e}")
+            response.status = 500
+            return {'error': 'Failed to create service'}
+
+
+@action('/api/services/<service_id:int>', methods=['GET', 'PUT', 'DELETE'])
+@action.uses(auth, auth.user, CORS())
+
+def service_detail(service_id):
+    """Individual service management"""
+    user = auth.get_user()
+
+    service = db.services[service_id]
+    if not service or not service.is_active:
+        abort(404)
+
+    # Check access permissions
+    if not user.get('is_admin'):
+        if not UserServiceAssignmentModel.check_user_service_access(db, user['id'], service_id):
+            abort(403)
+
+    if request.method == 'GET':
+        return {
+            'service': {
+                'id': service.id,
+                'name': service.name,
+                'ip_fqdn': service.ip_fqdn,
+                'port': service.port,
+                'protocol': service.protocol,
+                'collection': service.collection,
+                'cluster_id': service.cluster_id,
+                'auth_type': service.auth_type,
+                'tls_enabled': service.tls_enabled,
+                'tls_verify': service.tls_verify,
+                'health_check_enabled': service.health_check_enabled,
+                'health_check_path': service.health_check_path,
+                'health_check_interval': service.health_check_interval,
+                'created_at': service.created_at,
+                'updated_at': service.updated_at
+            }
+        }
+
+    elif request.method == 'PUT':
+        # Only admins and service owners can update services
+        if not check_permission(auth, 'update_services'):
+            abort(403)
+
+        data = request.json
+        update_data = {'updated_at': datetime.utcnow()}
+
+        # Update allowed fields
+        if 'name' in data:
+            update_data['name'] = data['name']
+        if 'ip_fqdn' in data:
+            update_data['ip_fqdn'] = data['ip_fqdn']
+        if 'port' in data:
+            update_data['port'] = data['port']
+        if 'protocol' in data:
+            update_data['protocol'] = data['protocol']
+        if 'collection' in data:
+            update_data['collection'] = data['collection']
+        if 'tls_enabled' in data:
+            update_data['tls_enabled'] = data['tls_enabled']
+        if 'tls_verify' in data:
+            update_data['tls_verify'] = data['tls_verify']
+        if 'health_check_enabled' in data:
+            update_data['health_check_enabled'] = data['health_check_enabled']
+        if 'health_check_path' in data:
+            update_data['health_check_path'] = data['health_check_path']
+        if 'health_check_interval' in data:
+            update_data['health_check_interval'] = data['health_check_interval']
+
+        service.update_record(**update_data)
+        return {'message': 'Service updated successfully'}
+
+    elif request.method == 'DELETE':
+        # Only admins can delete services
+        if not check_permission(auth, 'delete_services'):
+            abort(403)
+
+        # Soft delete - deactivate service
+        service.update_record(is_active=False, updated_at=datetime.utcnow())
+        return {'message': 'Service deactivated successfully'}
+
+
+@action('/api/services/<service_id:int>/auth', methods=['PUT'])
+@action.uses(auth, auth.user, CORS())
+
+def set_service_auth(service_id):
+    """Set service authentication method"""
+    user = auth.get_user()
+
+    service = db.services[service_id]
+    if not service or not service.is_active:
+        abort(404)
+
+    # Check access permissions
+    if not user.get('is_admin'):
+        if not UserServiceAssignmentModel.check_user_service_access(db, user['id'], service_id):
+            abort(403)
+
+    if not check_permission(auth, 'update_services'):
+        abort(403)
+
+    data = request.json
+    auth_type = data.get('auth_type')
+
+    try:
+        if auth_type == 'base64':
+            token = ServiceModel.set_base64_auth(db, service_id)
+            return {
+                'auth_type': 'base64',
+                'token': token,
+                'message': 'Base64 authentication configured'
+            }
+
+        elif auth_type == 'jwt':
+            jwt_expiry = data.get('jwt_expiry', 3600)
+            jwt_algorithm = data.get('jwt_algorithm', 'HS256')
+            jwt_secret = ServiceModel.set_jwt_auth(db, service_id, jwt_expiry, jwt_algorithm)
+            return {
+                'auth_type': 'jwt',
+                'jwt_secret': jwt_secret,
+                'jwt_expiry': jwt_expiry,
+                'jwt_algorithm': jwt_algorithm,
+                'message': 'JWT authentication configured'
+            }
+
+        elif auth_type == 'none':
+            service.update_record(
+                auth_type='none',
+                token_base64=None,
+                jwt_secret=None,
+                jwt_expiry=None,
+                updated_at=datetime.utcnow()
+            )
+            return {
+                'auth_type': 'none',
+                'message': 'Authentication disabled'
+            }
+
+        else:
+            response.status = 400
+            return {'error': 'Invalid auth type. Must be: none, base64, or jwt'}
+
+    except Exception as e:
+        logger.error(f"Service auth configuration failed: {e}")
+        response.status = 500
+        return {'error': 'Failed to configure authentication'}
+
+
+@action('/api/services/<service_id:int>/jwt/rotate', methods=['POST'])
+@action.uses(auth, auth.user, CORS())
+
+def rotate_service_jwt(service_id):
+    """Rotate JWT secret for service"""
+    user = auth.get_user()
+
+    service = db.services[service_id]
+    if not service or not service.is_active:
+        abort(404)
+
+    # Check access permissions
+    if not user.get('is_admin'):
+        if not UserServiceAssignmentModel.check_user_service_access(db, user['id'], service_id):
+            abort(403)
+
+    if not check_permission(auth, 'update_services'):
+        abort(403)
+
+    try:
+        new_secret = ServiceModel.rotate_jwt_secret(db, service_id)
+        if new_secret:
+            return {
+                'jwt_secret': new_secret,
+                'message': 'JWT secret rotated successfully'
+            }
+        else:
+            response.status = 400
+            return {'error': 'Service is not configured for JWT authentication'}
+
+    except Exception as e:
+        logger.error(f"JWT rotation failed: {e}")
+        response.status = 500
+        return {'error': 'Failed to rotate JWT secret'}
+
+
+@action('/api/services/<service_id:int>/jwt/token', methods=['POST'])
+@action.uses(auth, auth.user, CORS())
+
+def create_service_jwt_token(service_id):
+    """Create JWT token for service"""
+    user = auth.get_user()
+
+    service = db.services[service_id]
+    if not service or not service.is_active:
+        abort(404)
+
+    # Check access permissions
+    if not user.get('is_admin'):
+        if not UserServiceAssignmentModel.check_user_service_access(db, user['id'], service_id):
+            abort(403)
+
+    data = request.json
+    additional_claims = data.get('additional_claims', {})
+
+    try:
+        token = ServiceModel.create_jwt_token(db, service_id, additional_claims)
+        if token:
+            return {
+                'token': token,
+                'service_id': service_id,
+                'message': 'JWT token created successfully'
+            }
+        else:
+            response.status = 400
+            return {'error': 'Service is not configured for JWT authentication'}
+
+    except Exception as e:
+        logger.error(f"JWT token creation failed: {e}")
+        response.status = 500
+        return {'error': 'Failed to create JWT token'}
+
+
+@action('/api/services/<service_id:int>/users', methods=['GET', 'POST'])
+@action.uses(auth, auth.user, CORS())
+
+def service_users(service_id):
+    """Manage service user assignments"""
+    user = auth.get_user()
+
+    # Only admins can manage service users
+    if not check_permission(auth, 'update_services'):
+        abort(403)
+
+    service = db.services[service_id]
+    if not service or not service.is_active:
+        abort(404)
+
+    if request.method == 'GET':
+        # Get all users assigned to this service
+        assignments = db(
+            (db.user_service_assignments.service_id == service_id) &
+            (db.user_service_assignments.is_active == True) &
+            (db.auth_user.id == db.user_service_assignments.user_id)
+        ).select(
+            db.user_service_assignments.ALL,
+            db.auth_user.id,
+            db.auth_user.email,
+            db.auth_user.first_name,
+            db.auth_user.last_name,
+            left=db.auth_user.on(db.auth_user.id == db.user_service_assignments.user_id)
+        )
+
+        return {
+            'users': [
+                {
+                    'user_id': assignment.auth_user.id,
+                    'email': assignment.auth_user.email,
+                    'first_name': assignment.auth_user.first_name,
+                    'last_name': assignment.auth_user.last_name,
+                    'assigned_at': assignment.user_service_assignments.assigned_at
+                }
+                for assignment in assignments
+            ]
+        }
+
+    elif request.method == 'POST':
+        # Assign user to service
+        data = request.json
+        target_user_id = data.get('user_id')
+
+        # Validate user exists
+        target_user = db.auth_user[target_user_id]
+        if not target_user:
+            response.status = 400
+            return {'error': 'User not found'}
+
+        success = UserServiceAssignmentModel.assign_user_to_service(
+            db, target_user_id, service_id, user['id']
+        )
+
+        if success:
+            return {'message': 'User assigned to service successfully'}
+        else:
+            response.status = 500
+            return {'error': 'Failed to assign user to service'}
+
+
+# Mapping Management API Endpoints
+@action('/api/mappings', methods=['GET', 'POST'])
+@action.uses(auth, auth.user, CORS())
+
+def mappings():
+    """List mappings or create new mapping"""
+    user = auth.get_user()
+
+    if request.method == 'GET':
+        # Get cluster filter
+        cluster_id = request.query.get('cluster_id')
+
+        if not cluster_id:
+            response.status = 400
+            return {'error': 'cluster_id parameter required'}
+
+        try:
+            cluster_id = int(cluster_id)
+        except (ValueError, TypeError):
+            response.status = 400
+            return {'error': 'Invalid cluster_id'}
+
+        # Check user access to cluster
+        if not user.get('is_admin', False):
+            if not UserClusterAssignmentModel.check_user_cluster_access(db, user['id'], cluster_id):
+                response.status = 403
+                return {'error': 'Access denied to cluster'}
+
+        # Get mappings for cluster
+        mappings = MappingModel.get_cluster_mappings(
+            db, cluster_id, user['id'] if not user.get('is_admin', False) else None
+        )
+
+        return {'mappings': mappings}
+
+    elif request.method == 'POST':
+        if not check_permission(auth, 'create_mappings'):
+            response.status = 403
+            return {'error': 'Permission denied'}
+
+        data = request.json
+        if not data:
+            response.status = 400
+            return {'error': 'JSON data required'}
+
+        try:
+            # Validate required fields
+            required_fields = ['name', 'cluster_id', 'source_services', 'dest_services', 'ports']
+            for field in required_fields:
+                if field not in data:
+                    response.status = 400
+                    return {'error': f'Missing required field: {field}'}
+
+            # Check user access to cluster
+            cluster_id = data['cluster_id']
+            if not user.get('is_admin', False):
+                if not UserClusterAssignmentModel.check_user_cluster_access(db, user['id'], cluster_id):
+                    response.status = 403
+                    return {'error': 'Access denied to cluster'}
+
+            # Create mapping
+            mapping_id = MappingModel.create_mapping(
+                db=db,
+                name=data['name'],
+                source_services=data['source_services'],
+                dest_services=data['dest_services'],
+                ports=data['ports'],
+                cluster_id=cluster_id,
+                created_by=user['id'],
+                protocols=data.get('protocols', ['tcp']),
+                auth_required=data.get('auth_required', True),
+                priority=data.get('priority', 100),
+                description=data.get('description'),
+                comments=data.get('comments')
+            )
+
+            return {
+                'message': 'Mapping created successfully',
+                'mapping_id': mapping_id
+            }
+
+        except ValueError as e:
+            response.status = 400
+            return {'error': str(e)}
+        except Exception as e:
+            logger.error(f"Mapping creation failed: {e}")
+            response.status = 500
+            return {'error': 'Internal server error'}
+
+
+@action('/api/mappings/<mapping_id:int>', methods=['GET', 'PUT', 'DELETE'])
+@action.uses(auth, auth.user, CORS())
+
+def mapping_detail(mapping_id):
+    """Get, update, or delete specific mapping"""
+    user = auth.get_user()
+
+    # Get mapping
+    mapping = db.mappings[mapping_id]
+    if not mapping or not mapping.is_active:
+        response.status = 404
+        return {'error': 'Mapping not found'}
+
+    # Check user access
+    if not user.get('is_admin', False):
+        if not UserClusterAssignmentModel.check_user_cluster_access(db, user['id'], mapping.cluster_id):
+            response.status = 403
+            return {'error': 'Access denied'}
+
+    if request.method == 'GET':
+        # Return full mapping details
+        config = MappingModel.resolve_mapping_services(db, mapping_id)
+        if not config:
+            response.status = 404
+            return {'error': 'Mapping not found'}
+
+        return {'mapping': config}
+
+    elif request.method == 'PUT':
+        if not check_permission(auth, 'update_mappings'):
+            response.status = 403
+            return {'error': 'Permission denied'}
+
+        data = request.json
+        if not data:
+            response.status = 400
+            return {'error': 'JSON data required'}
+
+        try:
+            update_data = {}
+
+            # Update allowed fields
+            if 'name' in data:
+                update_data['name'] = data['name']
+            if 'description' in data:
+                update_data['description'] = data['description']
+            if 'source_services' in data:
+                normalized_sources = MappingModel._normalize_service_list(
+                    db, data['source_services'], mapping.cluster_id
+                )
+                if normalized_sources:
+                    update_data['source_services'] = normalized_sources
+            if 'dest_services' in data:
+                normalized_dests = MappingModel._normalize_service_list(
+                    db, data['dest_services'], mapping.cluster_id
+                )
+                if normalized_dests:
+                    update_data['dest_services'] = normalized_dests
+            if 'ports' in data:
+                normalized_ports = MappingModel._normalize_port_list(data['ports'])
+                if normalized_ports:
+                    update_data['ports'] = normalized_ports
+            if 'protocols' in data:
+                update_data['protocols'] = data['protocols']
+            if 'auth_required' in data:
+                update_data['auth_required'] = data['auth_required']
+            if 'priority' in data:
+                update_data['priority'] = data['priority']
+            if 'comments' in data:
+                update_data['comments'] = data['comments']
+
+            if update_data:
+                update_data['updated_at'] = datetime.utcnow()
+                mapping.update_record(**update_data)
+
+            return {'message': 'Mapping updated successfully'}
+
+        except ValueError as e:
+            response.status = 400
+            return {'error': str(e)}
+        except Exception as e:
+            logger.error(f"Mapping update failed: {e}")
+            response.status = 500
+            return {'error': 'Internal server error'}
+
+    elif request.method == 'DELETE':
+        if not check_permission(auth, 'delete_mappings'):
+            response.status = 403
+            return {'error': 'Permission denied'}
+
+        try:
+            # Soft delete
+            mapping.update_record(
+                is_active=False,
+                updated_at=datetime.utcnow()
+            )
+
+            return {'message': 'Mapping deleted successfully'}
+
+        except Exception as e:
+            logger.error(f"Mapping deletion failed: {e}")
+            response.status = 500
+            return {'error': 'Internal server error'}
+
+
+@action('/api/mappings/<mapping_id:int>/resolve')
+@action.uses(auth, auth.user, CORS())
+
+def resolve_mapping(mapping_id):
+    """Resolve mapping to concrete service configurations for proxy"""
+    user = auth.get_user()
+
+    # Get mapping
+    mapping = db.mappings[mapping_id]
+    if not mapping or not mapping.is_active:
+        response.status = 404
+        return {'error': 'Mapping not found'}
+
+    # Check user access
+    if not user.get('is_admin', False):
+        if not UserClusterAssignmentModel.check_user_cluster_access(db, user['id'], mapping.cluster_id):
+            response.status = 403
+            return {'error': 'Access denied'}
+
+    try:
+        resolved = MappingModel.resolve_mapping_services(db, mapping_id)
+        if not resolved:
+            response.status = 404
+            return {'error': 'Mapping not found'}
+
+        return {'resolved_mapping': resolved}
+
+    except Exception as e:
+        logger.error(f"Mapping resolution failed: {e}")
+        response.status = 500
+        return {'error': 'Internal server error'}
+
+
+@action('/api/mappings/find', methods=['POST'])
+@action.uses(auth, auth.user, CORS())
+
+def find_mappings():
+    """Find mappings that match specific criteria"""
+    user = auth.get_user()
+    data = request.json
+
+    if not data:
+        response.status = 400
+        return {'error': 'JSON data required'}
+
+    # Validate required fields
+    required_fields = ['source_service_id', 'dest_service_id', 'protocol', 'port']
+    for field in required_fields:
+        if field not in data:
+            response.status = 400
+            return {'error': f'Missing required field: {field}'}
+
+    try:
+        source_service_id = data['source_service_id']
+        dest_service_id = data['dest_service_id']
+        protocol = data['protocol']
+        port = data['port']
+
+        # Check user access to services
+        source_service = db.services[source_service_id]
+        if not source_service:
+            response.status = 404
+            return {'error': 'Source service not found'}
+
+        if not user.get('is_admin', False):
+            if not UserClusterAssignmentModel.check_user_cluster_access(db, user['id'], source_service.cluster_id):
+                response.status = 403
+                return {'error': 'Access denied'}
+
+        # Find matching mappings
+        matching = MappingModel.find_matching_mappings(
+            db, source_service_id, dest_service_id, protocol, port
+        )
+
+        return {'matching_mappings': matching}
+
+    except Exception as e:
+        logger.error(f"Mapping search failed: {e}")
+        response.status = 500
+        return {'error': 'Internal server error'}
+
+
+# Certificate Management API Endpoints
+@action('/api/certificates', methods=['GET', 'POST'])
+@action.uses(auth, auth.user, CORS())
+def certificates():
+    """Certificate management"""
+    user = auth.get_user()
+
+    if request.method == 'GET':
+        if not check_permission(auth, 'read_certificates'):
+            response.status = 403
+            return {'error': 'Permission denied'}
+
+        # Get all active certificates
+        certificates = db(
+            db.certificates.is_active == True
+        ).select(orderby=db.certificates.name)
+
+        cert_list = []
+        for cert in certificates:
+            days_until_expiry = (cert.expires_at - datetime.utcnow()).days if cert.expires_at else 0
+            cert_list.append({
+                'id': cert.id,
+                'name': cert.name,
+                'description': cert.description,
+                'domain_names': cert.domain_names,
+                'issuer': cert.issuer,
+                'source_type': cert.source_type,
+                'auto_renew': cert.auto_renew,
+                'issued_at': cert.issued_at,
+                'expires_at': cert.expires_at,
+                'days_until_expiry': days_until_expiry,
+                'is_active': cert.is_active,
+                'created_at': cert.created_at
+            })
+
+        return {'certificates': cert_list}
+
+    elif request.method == 'POST':
+        if not check_permission(auth, 'create_certificates'):
+            response.status = 403
+            return {'error': 'Permission denied'}
+
+        data = request.json
+        if not data:
+            response.status = 400
+            return {'error': 'JSON data required'}
+
+        try:
+            # Validate required fields
+            if 'name' not in data or 'source_type' not in data:
+                response.status = 400
+                return {'error': 'Missing required fields: name, source_type'}
+
+            source_type = data['source_type']
+
+            if source_type == 'upload':
+                # Direct certificate upload
+                if not all(field in data for field in ['cert_data', 'key_data']):
+                    response.status = 400
+                    return {'error': 'Missing required fields for upload: cert_data, key_data'}
+
+                cert_id = CertificateModel.create_certificate(
+                    db=db,
+                    name=data['name'],
+                    cert_data=data['cert_data'],
+                    key_data=data['key_data'],
+                    source_type='upload',
+                    created_by=user['id'],
+                    description=data.get('description'),
+                    ca_bundle=data.get('ca_bundle'),
+                    auto_renew=False
+                )
+
+            elif source_type == 'infisical':
+                # Infisical integration
+                if 'source_config' not in data:
+                    response.status = 400
+                    return {'error': 'Missing source_config for Infisical'}
+
+                config = data['source_config']
+                required_fields = ['api_url', 'token', 'project_id', 'secret_path']
+                if not all(field in config for field in required_fields):
+                    response.status = 400
+                    return {'error': f'Missing required Infisical config fields: {required_fields}'}
+
+                cert_id = CertificateModel.create_certificate(
+                    db=db,
+                    name=data['name'],
+                    cert_data="",  # Will be fetched during renewal
+                    key_data="",
+                    source_type='infisical',
+                    created_by=user['id'],
+                    description=data.get('description'),
+                    source_config=config,
+                    auto_renew=data.get('auto_renew', True),
+                    renewal_threshold_days=data.get('renewal_threshold_days', 30)
+                )
+
+            elif source_type == 'vault':
+                # HashiCorp Vault integration
+                if 'source_config' not in data:
+                    response.status = 400
+                    return {'error': 'Missing source_config for Vault'}
+
+                config = data['source_config']
+                required_fields = ['vault_url', 'token', 'role', 'common_name']
+                if not all(field in config for field in required_fields):
+                    response.status = 400
+                    return {'error': f'Missing required Vault config fields: {required_fields}'}
+
+                cert_id = CertificateModel.create_certificate(
+                    db=db,
+                    name=data['name'],
+                    cert_data="",  # Will be issued during renewal
+                    key_data="",
+                    source_type='vault',
+                    created_by=user['id'],
+                    description=data.get('description'),
+                    source_config=config,
+                    auto_renew=data.get('auto_renew', True),
+                    renewal_threshold_days=data.get('renewal_threshold_days', 30)
+                )
+
+            else:
+                response.status = 400
+                return {'error': 'Invalid source_type. Must be: upload, infisical, vault'}
+
+            return {
+                'message': 'Certificate created successfully',
+                'certificate_id': cert_id
+            }
+
+        except ValueError as e:
+            response.status = 400
+            return {'error': str(e)}
+        except Exception as e:
+            logger.error(f"Certificate creation failed: {e}")
+            response.status = 500
+            return {'error': 'Failed to create certificate'}
+
+
+@action('/api/certificates/<cert_id:int>', methods=['GET', 'PUT', 'DELETE'])
+@action.uses(auth, auth.user, CORS())
+def certificate_detail(cert_id):
+    """Individual certificate management"""
+    user = auth.get_user()
+
+    # Get certificate
+    cert = db.certificates[cert_id]
+    if not cert or not cert.is_active:
+        response.status = 404
+        return {'error': 'Certificate not found'}
+
+    if request.method == 'GET':
+        if not check_permission(auth, 'read_certificates'):
+            response.status = 403
+            return {'error': 'Permission denied'}
+
+        days_until_expiry = (cert.expires_at - datetime.utcnow()).days if cert.expires_at else 0
+
+        cert_data = {
+            'id': cert.id,
+            'name': cert.name,
+            'description': cert.description,
+            'domain_names': cert.domain_names,
+            'issuer': cert.issuer,
+            'serial_number': cert.serial_number,
+            'fingerprint_sha256': cert.fingerprint_sha256,
+            'source_type': cert.source_type,
+            'auto_renew': cert.auto_renew,
+            'renewal_threshold_days': cert.renewal_threshold_days,
+            'issued_at': cert.issued_at,
+            'expires_at': cert.expires_at,
+            'days_until_expiry': days_until_expiry,
+            'next_renewal_check': cert.next_renewal_check,
+            'renewal_attempts': cert.renewal_attempts,
+            'last_renewal_attempt': cert.last_renewal_attempt,
+            'renewal_error': cert.renewal_error,
+            'is_active': cert.is_active,
+            'created_at': cert.created_at,
+            'updated_at': cert.updated_at
+        }
+
+        # Include source config for admins (without sensitive data)
+        if user.get('is_admin'):
+            config = dict(cert.source_config or {})
+            # Mask sensitive fields
+            if 'token' in config:
+                config['token'] = '***masked***'
+            cert_data['source_config'] = config
+
+        return {'certificate': cert_data}
+
+    elif request.method == 'PUT':
+        if not check_permission(auth, 'update_certificates'):
+            response.status = 403
+            return {'error': 'Permission denied'}
+
+        data = request.json
+        if not data:
+            response.status = 400
+            return {'error': 'JSON data required'}
+
+        try:
+            update_data = {}
+
+            # Update allowed fields
+            if 'name' in data:
+                update_data['name'] = data['name']
+            if 'description' in data:
+                update_data['description'] = data['description']
+            if 'auto_renew' in data:
+                update_data['auto_renew'] = data['auto_renew']
+            if 'renewal_threshold_days' in data:
+                if 1 <= data['renewal_threshold_days'] <= 90:
+                    update_data['renewal_threshold_days'] = data['renewal_threshold_days']
+                else:
+                    response.status = 400
+                    return {'error': 'Renewal threshold must be between 1 and 90 days'}
+
+            # Update certificate data for upload type
+            if cert.source_type == 'upload' and 'cert_data' in data and 'key_data' in data:
+                # Parse and validate new certificate
+                cert_info = CertificateModel._parse_certificate(data['cert_data'])
+                if not cert_info:
+                    response.status = 400
+                    return {'error': 'Invalid certificate data'}
+
+                if not CertificateModel._validate_key_pair(data['cert_data'], data['key_data']):
+                    response.status = 400
+                    return {'error': 'Private key does not match certificate'}
+
+                update_data.update({
+                    'cert_data': data['cert_data'],
+                    'key_data': data['key_data'],
+                    'domain_names': cert_info['domain_names'],
+                    'issuer': cert_info['issuer'],
+                    'serial_number': cert_info['serial_number'],
+                    'fingerprint_sha256': cert_info['fingerprint_sha256'],
+                    'issued_at': cert_info['issued_at'],
+                    'expires_at': cert_info['expires_at']
+                })
+
+                if 'ca_bundle' in data:
+                    update_data['ca_bundle'] = data['ca_bundle']
+
+            if update_data:
+                update_data['updated_at'] = datetime.utcnow()
+                cert.update_record(**update_data)
+
+            return {'message': 'Certificate updated successfully'}
+
+        except ValueError as e:
+            response.status = 400
+            return {'error': str(e)}
+        except Exception as e:
+            logger.error(f"Certificate update failed: {e}")
+            response.status = 500
+            return {'error': 'Failed to update certificate'}
+
+    elif request.method == 'DELETE':
+        if not check_permission(auth, 'delete_certificates'):
+            response.status = 403
+            return {'error': 'Permission denied'}
+
+        try:
+            # Soft delete
+            cert.update_record(
+                is_active=False,
+                updated_at=datetime.utcnow()
+            )
+
+            return {'message': 'Certificate deleted successfully'}
+
+        except Exception as e:
+            logger.error(f"Certificate deletion failed: {e}")
+            response.status = 500
+            return {'error': 'Failed to delete certificate'}
+
+
+@action('/api/certificates/<cert_id:int>/renew', methods=['POST'])
+@action.uses(auth, auth.user, CORS())
+async def renew_certificate(cert_id):
+    """Manually trigger certificate renewal"""
+    user = auth.get_user()
+
+    if not check_permission(auth, 'update_certificates'):
+        response.status = 403
+        return {'error': 'Permission denied'}
+
+    cert = db.certificates[cert_id]
+    if not cert or not cert.is_active:
+        response.status = 404
+        return {'error': 'Certificate not found'}
+
+    if cert.source_type == 'upload':
+        response.status = 400
+        return {'error': 'Manual certificates cannot be auto-renewed'}
+
+    try:
+        from models.certificate import CertificateManager
+        cert_manager = CertificateManager(db)
+        success = await cert_manager.renew_certificate(cert_id)
+
+        if success:
+            return {'message': 'Certificate renewal initiated successfully'}
+        else:
+            response.status = 500
+            return {'error': 'Certificate renewal failed'}
+
+    except Exception as e:
+        logger.error(f"Certificate renewal failed: {e}")
+        response.status = 500
+        return {'error': f'Certificate renewal failed: {str(e)}'}
+
+
+@action('/api/certificates/expiring', methods=['GET'])
+@action.uses(auth, auth.user, CORS())
+def expiring_certificates():
+    """Get certificates expiring soon"""
+    user = auth.get_user()
+
+    if not check_permission(auth, 'read_certificates'):
+        response.status = 403
+        return {'error': 'Permission denied'}
+
+    days = int(request.query.get('days', 30))
+    if not (1 <= days <= 365):
+        response.status = 400
+        return {'error': 'Days parameter must be between 1 and 365'}
+
+    try:
+        expiring = CertificateModel.get_expiring_certificates(db, days)
+        return {'expiring_certificates': expiring}
+
+    except Exception as e:
+        logger.error(f"Failed to get expiring certificates: {e}")
+        response.status = 500
+        return {'error': 'Failed to get expiring certificates'}
+
+
+@action('/api/certificates/renewal-status', methods=['GET'])
+@action.uses(auth, auth.user, CORS())
+def certificate_renewal_status():
+    """Get certificate renewal status"""
+    user = auth.get_user()
+
+    if not user.get('is_admin'):
+        response.status = 403
+        return {'error': 'Admin access required'}
+
+    try:
+        # Get certificates that need renewal
+        pending_renewals = CertificateModel.get_certificates_for_renewal(db)
+
+        # Get recent renewal attempts
+        recent_attempts = db(
+            (db.certificates.last_renewal_attempt >= datetime.utcnow() - timedelta(days=7)) &
+            (db.certificates.is_active == True)
+        ).select(
+            db.certificates.id,
+            db.certificates.name,
+            db.certificates.last_renewal_attempt,
+            db.certificates.renewal_attempts,
+            db.certificates.renewal_error,
+            orderby=~db.certificates.last_renewal_attempt
+        )
+
+        return {
+            'pending_renewals': pending_renewals,
+            'recent_attempts': [
+                {
+                    'id': attempt.id,
+                    'name': attempt.name,
+                    'last_attempt': attempt.last_renewal_attempt,
+                    'attempts': attempt.renewal_attempts,
+                    'error': attempt.renewal_error
+                }
+                for attempt in recent_attempts
+            ]
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get renewal status: {e}")
+        response.status = 500
+        return {'error': 'Failed to get renewal status'}
+
+
 # Health endpoints
 @action('/healthz')
-@enable_cors()
+@action.uses(CORS())
 def health_check():
     """Health check endpoint"""
     try:
@@ -1007,7 +2068,7 @@ def health_check():
 
 
 @action('/metrics')
-@enable_cors()
+@action.uses(CORS())
 def metrics():
     """Prometheus metrics endpoint"""
     try:
@@ -1044,7 +2105,7 @@ marchproxy_proxies_active {active_proxies}
 
 
 @action('/')
-@enable_cors()
+@action.uses(CORS())
 def index():
     """Root endpoint"""
     return {

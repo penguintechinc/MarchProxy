@@ -30,7 +30,7 @@ class MappingModel:
             Field('auth_required', type='boolean', default=True),
             Field('priority', type='integer', default=100),
             Field('is_active', type='boolean', default=True),
-            Field('created_by', type='reference users', required=True),
+            Field('created_by', type='reference auth_user', required=True),
             Field('created_at', type='datetime', default=datetime.utcnow),
             Field('updated_at', type='datetime', update=datetime.utcnow),
             Field('comments', type='text'),
@@ -202,8 +202,8 @@ class MappingModel:
 
         # If user_id provided and user is not admin, filter by accessible services
         if user_id:
-            user = db.users[user_id]
-            if not user or not user.is_admin:
+            user = db.auth_user[user_id]
+            if not user or not user.get('is_admin', False):
                 # Get user's accessible services
                 user_services = db(
                     (db.user_service_assignments.user_id == user_id) &

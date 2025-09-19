@@ -3,17 +3,26 @@ package ebpf
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"unsafe"
 )
 
 /*
 #cgo LDFLAGS: -lbpf -lelf -lz
+#include <stdlib.h>
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
 #include <linux/bpf.h>
 #include <stdio.h>
 #include <unistd.h>
+
+// C struct definition matching Go ServiceRule
+struct service_rule {
+    __u32 service_id;
+    __be32 ip_addr;  // Network byte order
+    __u16 port;
+    __u8 protocol;
+    __u8 action;     // 0=drop, 1=allow, 2=userspace
+};
 
 // Helper function to load eBPF program from file
 struct bpf_object *load_bpf_program(const char *filename) {
@@ -271,25 +280,4 @@ type EBPFStatistics struct {
 	DroppedPackets   uint64
 	AllowedPackets   uint64
 	UserspacePackets uint64
-}
-
-// FindEBPFProgram searches for the compiled eBPF program file
-func FindEBPFProgram() (string, error) {
-	// Search in common locations
-	searchPaths := []string{
-		"ebpf/complete_filter.o",
-		"../ebpf/build/complete_filter.o",
-		"/opt/marchproxy/ebpf/complete_filter.o",
-		"./complete_filter.o",
-	}
-
-	for _, path := range searchPaths {
-		if absPath, err := filepath.Abs(path); err == nil {
-			if _, err := os.Stat(absPath); err == nil {
-				return absPath, nil
-			}
-		}
-	}
-
-	return "", fmt.Errorf("eBPF program file not found in search paths: %v", searchPaths)
 }

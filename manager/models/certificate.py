@@ -50,7 +50,7 @@ class CertificateModel:
             Field('last_renewal_attempt', type='datetime'),
             Field('renewal_error', type='text'),
             Field('is_active', type='boolean', default=True),
-            Field('created_by', type='reference users', required=True),
+            Field('created_by', type='reference auth_user', required=True),
             Field('created_at', type='datetime', default=datetime.utcnow),
             Field('updated_at', type='datetime', update=datetime.utcnow),
             Field('metadata', type='json'),
