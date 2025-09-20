@@ -1,0 +1,155 @@
+global:
+  smtp_smarthost: '{{ env "SMTP_HOST" }}:{{ env "SMTP_PORT" }}'
+  smtp_from: '{{ env "SMTP_FROM" }}'
+  smtp_auth_username: '{{ env "SMTP_USERNAME" }}'
+  smtp_auth_password: '{{ env "SMTP_PASSWORD" }}'
+  slack_api_url: '{{ env "SLACK_WEBHOOK_URL" }}'
+
+route:
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 24h
+  receiver: 'default'
+  routes:
+    # Critical alerts - immediate notification
+    - match:
+        severity: critical
+      receiver: 'critical-alerts'
+      group_wait: 10s
+      repeat_interval: 1h
+
+    # License and authentication alerts
+    - match_re:
+        alertname: '(LicenseExpired|LicenseExpiring|ProxyLimitExceeded|DatabaseConnectionFailure)'
+      receiver: 'license-alerts'
+      group_wait: 15s
+      repeat_interval: 6h
+
+    # Performance and resource alerts
+    - match_re:
+        alertname: '(HighLatency|HighErrorRate|HighCPUUsage|HighMemoryUsage|HighConnectionCount)'
+      receiver: 'performance-alerts'
+      group_wait: 2m
+      repeat_interval: 12h
+
+    # Security alerts
+    - match_re:
+        alertname: '(HighAuthenticationFailureRate|PossibleDDoSAttack|TLSCertificateExpired|TLSCertificateExpiring)'
+      receiver: 'security-alerts'
+      group_wait: 30s
+      repeat_interval: 2h
+
+receivers:
+  # Default receiver
+  - name: 'default'
+    email_configs:
+      - to: '{{ env "ALERT_EMAIL_DEFAULT" }}'
+        subject: 'MarchProxy Alert: {{ .GroupLabels.alertname }}'
+        body: |
+          {{ range .Alerts }}
+          Alert: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+          Severity: {{ .Labels.severity }}
+          Service: {{ .Labels.service }}
+          Instance: {{ .Labels.instance }}
+          Started: {{ .StartsAt }}
+          {{ end }}
+
+  # Critical alerts - multiple channels
+  - name: 'critical-alerts'
+    email_configs:
+      - to: '{{ env "ALERT_EMAIL_CRITICAL" }}'
+        subject: '🚨 CRITICAL: MarchProxy {{ .GroupLabels.alertname }}'
+        body: |
+          CRITICAL ALERT - IMMEDIATE ACTION REQUIRED
+
+          {{ range .Alerts }}
+          Alert: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+          Service: {{ .Labels.service }}
+          Instance: {{ .Labels.instance }}
+          Started: {{ .StartsAt }}
+
+          This alert requires immediate attention!
+          {{ end }}
+    # Uncomment and configure for Slack notifications
+    # slack_configs:
+    #   - api_url: '{{ .SlackAPIURL }}'
+    #     channel: '#critical-alerts'
+    #     title: 'CRITICAL: MarchProxy Alert'
+    #     text: |
+    #       {{ range .Alerts }}
+    #       *{{ .Annotations.summary }}*
+    #       {{ .Annotations.description }}
+    #       Service: {{ .Labels.service }}
+    #       {{ end }}
+    # webhook_configs:
+    #   - url: 'https://your-pagerduty-webhook-url'
+    #     send_resolved: true
+
+  # License and business continuity alerts
+  - name: 'license-alerts'
+    email_configs:
+      - to: '{{ env "ALERT_EMAIL_LICENSE" }}'
+        subject: '⚠️ MarchProxy License Alert: {{ .GroupLabels.alertname }}'
+        body: |
+          LICENSE/BUSINESS CONTINUITY ALERT
+
+          {{ range .Alerts }}
+          Alert: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+          Service: {{ .Labels.service }}
+          Started: {{ .StartsAt }}
+
+          Action Required: Please check license status and renewal requirements.
+          {{ end }}
+
+  # Performance alerts
+  - name: 'performance-alerts'
+    email_configs:
+      - to: '{{ env "ALERT_EMAIL_PERFORMANCE" }}'
+        subject: '📊 MarchProxy Performance Alert: {{ .GroupLabels.alertname }}'
+        body: |
+          PERFORMANCE ALERT
+
+          {{ range .Alerts }}
+          Alert: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+          Service: {{ .Labels.service }}
+          Instance: {{ .Labels.instance }}
+          Started: {{ .StartsAt }}
+          {{ end }}
+
+  # Security alerts
+  - name: 'security-alerts'
+    email_configs:
+      - to: '{{ env "ALERT_EMAIL_SECURITY" }}'
+        subject: '🔒 MarchProxy Security Alert: {{ .GroupLabels.alertname }}'
+        body: |
+          SECURITY ALERT
+
+          {{ range .Alerts }}
+          Alert: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+          Service: {{ .Labels.service }}
+          Instance: {{ .Labels.instance }}
+          Started: {{ .StartsAt }}
+
+          This may indicate a security incident requiring investigation.
+          {{ end }}
+
+inhibit_rules:
+  # Inhibit non-critical alerts when critical alerts are firing for the same service
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['service', 'instance']
+
+  # Inhibit duplicate alerts
+  - source_match:
+      alertname: 'MarchProxyManagerDown'
+    target_match_re:
+      alertname: '(DatabaseConnectionFailure|LicenseExpired)'
+    equal: ['instance']

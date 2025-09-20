@@ -1,0 +1,186 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # MarchProxy Manager logs
+  - job_name: marchproxy-manager
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: marchproxy-manager
+          service: manager
+          __path__: /var/log/marchproxy/manager/*.log
+    pipeline_stages:
+      - json:
+          expressions:
+            timestamp: time
+            level: level
+            component: component
+            message: message
+            cluster_id: cluster_id
+            user_id: user_id
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano
+      - labels:
+          level:
+          component:
+          cluster_id:
+          user_id:
+
+  # MarchProxy Proxy logs
+  - job_name: marchproxy-proxy
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: marchproxy-proxy
+          service: proxy
+          __path__: /var/log/marchproxy/proxy/*.log
+    pipeline_stages:
+      - json:
+          expressions:
+            timestamp: time
+            level: level
+            component: component
+            message: message
+            proxy_id: proxy_id
+            cluster_id: cluster_id
+            service_id: service_id
+            source_ip: source_ip
+            destination_ip: destination_ip
+            protocol: protocol
+            bytes_transferred: bytes_transferred
+            duration_ms: duration_ms
+            auth_result: auth_result
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano
+      - labels:
+          level:
+          component:
+          proxy_id:
+          cluster_id:
+          service_id:
+          protocol:
+          auth_result:
+
+  # Authentication logs
+  - job_name: auth-logs
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: auth-logs
+          service: authentication
+          __path__: /var/log/marchproxy/auth/*.log
+    pipeline_stages:
+      - json:
+          expressions:
+            timestamp: time
+            level: level
+            event_type: event_type
+            user_id: user_id
+            cluster_id: cluster_id
+            source_ip: source_ip
+            user_agent: user_agent
+            success: success
+            failure_reason: failure_reason
+            session_id: session_id
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano
+      - labels:
+          level:
+          event_type:
+          user_id:
+          cluster_id:
+          success:
+          failure_reason:
+
+  # Netflow logs
+  - job_name: netflow-logs
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: netflow-logs
+          service: netflow
+          __path__: /var/log/marchproxy/netflow/*.log
+    pipeline_stages:
+      - json:
+          expressions:
+            timestamp: time
+            proxy_id: proxy_id
+            cluster_id: cluster_id
+            service_id: service_id
+            source_ip: source_ip
+            source_port: source_port
+            destination_ip: destination_ip
+            destination_port: destination_port
+            protocol: protocol
+            bytes_in: bytes_in
+            bytes_out: bytes_out
+            packets_in: packets_in
+            packets_out: packets_out
+            duration_ms: duration_ms
+            tcp_flags: tcp_flags
+            acceleration_mode: acceleration_mode
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano
+      - labels:
+          proxy_id:
+          cluster_id:
+          service_id:
+          protocol:
+          acceleration_mode:
+
+  # System logs
+  - job_name: syslog
+    syslog:
+      listen_address: 0.0.0.0:514
+      idle_timeout: 60s
+      label_structured_data: yes
+      labels:
+        job: syslog
+        service: system
+    relabel_configs:
+      - source_labels: ['__syslog_message_hostname']
+        target_label: 'host'
+      - source_labels: ['__syslog_message_app_name']
+        target_label: 'app'
+      - source_labels: ['__syslog_message_facility']
+        target_label: 'facility'
+      - source_labels: ['__syslog_message_severity']
+        target_label: 'severity'
+
+  # Container logs
+  - job_name: containers
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+    relabel_configs:
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
+        target_label: 'service'
+      - source_labels: ['__meta_docker_container_name']
+        target_label: 'container'
+      - source_labels: ['__meta_docker_container_log_stream']
+        target_label: 'stream'
+    pipeline_stages:
+      - docker: {}
+      - timestamp:
+          source: time
+          format: RFC3339Nano
+      - labels:
+          stream:
+          service:
+          container:

@@ -1,0 +1,225 @@
+groups:
+  - name: marchproxy_alerts
+    rules:
+      # High-level service availability
+      - alert: MarchProxyManagerDown
+        expr: up{job="marchproxy-manager"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: manager
+        annotations:
+          summary: "MarchProxy Manager is down"
+          description: "MarchProxy Manager has been down for more than 1 minute."
+
+      - alert: MarchProxyProxyDown
+        expr: up{job="marchproxy-proxy"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: proxy
+        annotations:
+          summary: "MarchProxy Proxy {{ $labels.instance }} is down"
+          description: "MarchProxy Proxy {{ $labels.instance }} has been down for more than 1 minute."
+
+      # Performance alerts
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(marchproxy_request_duration_seconds_bucket[5m])) > 0.5
+        for: 2m
+        labels:
+          severity: warning
+          service: proxy
+        annotations:
+          summary: "High latency detected on {{ $labels.instance }}"
+          description: "95th percentile latency is {{ $value }}s on {{ $labels.instance }}"
+
+      - alert: HighErrorRate
+        expr: rate(marchproxy_requests_total{status_code=~"5.."}[5m]) / rate(marchproxy_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          service: proxy
+        annotations:
+          summary: "High error rate on {{ $labels.instance }}"
+          description: "Error rate is {{ $value | humanizePercentage }} on {{ $labels.instance }}"
+
+      # Authentication alerts
+      - alert: HighAuthenticationFailureRate
+        expr: rate(marchproxy_auth_failures_total[5m]) / rate(marchproxy_auth_attempts_total[5m]) > 0.1
+        for: 3m
+        labels:
+          severity: warning
+          service: proxy
+        annotations:
+          summary: "High authentication failure rate"
+          description: "Authentication failure rate is {{ $value | humanizePercentage }}"
+
+      - alert: PossibleDDoSAttack
+        expr: rate(marchproxy_rate_limited_requests_total[1m]) > 100
+        for: 1m
+        labels:
+          severity: critical
+          service: proxy
+        annotations:
+          summary: "Possible DDoS attack detected"
+          description: "Rate limiting is blocking {{ $value }} requests/second"
+
+      # Resource utilization
+      - alert: HighCPUUsage
+        expr: rate(process_cpu_seconds_total[5m]) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}"
+          description: "CPU usage is {{ $value }}% on {{ $labels.instance }}"
+
+      - alert: HighMemoryUsage
+        expr: process_resident_memory_bytes / 1024 / 1024 > 512
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Memory usage is {{ $value }}MB on {{ $labels.instance }}"
+
+      # Connection and capacity
+      - alert: HighConnectionCount
+        expr: marchproxy_active_connections > 1000
+        for: 5m
+        labels:
+          severity: warning
+          service: proxy
+        annotations:
+          summary: "High connection count on {{ $labels.instance }}"
+          description: "Active connections: {{ $value }} on {{ $labels.instance }}"
+
+      - alert: LowDiskSpace
+        expr: (node_filesystem_avail_bytes / node_filesystem_size_bytes) * 100 < 10
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Low disk space on {{ $labels.instance }}"
+          description: "Disk space is {{ $value }}% available on {{ $labels.instance }}"
+
+      # License and clustering
+      - alert: LicenseExpiring
+        expr: marchproxy_license_days_until_expiry < 30
+        for: 1h
+        labels:
+          severity: warning
+          service: manager
+        annotations:
+          summary: "MarchProxy license expiring soon"
+          description: "License expires in {{ $value }} days"
+
+      - alert: LicenseExpired
+        expr: marchproxy_license_valid == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: manager
+        annotations:
+          summary: "MarchProxy license expired"
+          description: "License has expired and needs renewal"
+
+      - alert: ProxyLimitExceeded
+        expr: marchproxy_registered_proxies > marchproxy_license_max_proxies
+        for: 1m
+        labels:
+          severity: critical
+          service: manager
+        annotations:
+          summary: "Proxy limit exceeded"
+          description: "{{ $value }} proxies registered, limit is {{ $labels.max_proxies }}"
+
+      # eBPF and XDP specific alerts
+      - alert: eBPFProgramNotLoaded
+        expr: marchproxy_ebpf_program_loaded == 0
+        for: 5m
+        labels:
+          severity: warning
+          service: proxy
+        annotations:
+          summary: "eBPF program not loaded on {{ $labels.instance }}"
+          description: "eBPF acceleration is not active, falling back to userspace processing"
+
+      - alert: XDPHighDropRate
+        expr: rate(marchproxy_xdp_dropped_packets_total[5m]) / rate(marchproxy_xdp_total_packets_total[5m]) > 0.1
+        for: 3m
+        labels:
+          severity: warning
+          service: proxy
+        annotations:
+          summary: "High XDP drop rate on {{ $labels.instance }}"
+          description: "XDP is dropping {{ $value | humanizePercentage }} of packets"
+
+      # Database connectivity
+      - alert: DatabaseConnectionFailure
+        expr: marchproxy_database_connections_failed_total > 0
+        for: 1m
+        labels:
+          severity: critical
+          service: manager
+        annotations:
+          summary: "Database connection failure"
+          description: "Failed to connect to database"
+
+      # TLS Certificate alerts
+      - alert: TLSCertificateExpiring
+        expr: marchproxy_tls_certificate_expiry_days < 30
+        for: 1h
+        labels:
+          severity: warning
+          service: proxy
+        annotations:
+          summary: "TLS certificate expiring soon for {{ $labels.domain }}"
+          description: "Certificate for {{ $labels.domain }} expires in {{ $value }} days"
+
+      - alert: TLSCertificateExpired
+        expr: marchproxy_tls_certificate_expiry_days < 0
+        for: 1m
+        labels:
+          severity: critical
+          service: proxy
+        annotations:
+          summary: "TLS certificate expired for {{ $labels.domain }}"
+          description: "Certificate for {{ $labels.domain }} has expired"
+
+  - name: marchproxy_recording_rules
+    rules:
+      # Request rate recording rules
+      - record: marchproxy:request_rate_5m
+        expr: rate(marchproxy_requests_total[5m])
+
+      - record: marchproxy:error_rate_5m
+        expr: rate(marchproxy_requests_total{status_code=~"5.."}[5m]) / rate(marchproxy_requests_total[5m])
+
+      - record: marchproxy:latency_p95_5m
+        expr: histogram_quantile(0.95, rate(marchproxy_request_duration_seconds_bucket[5m]))
+
+      - record: marchproxy:latency_p99_5m
+        expr: histogram_quantile(0.99, rate(marchproxy_request_duration_seconds_bucket[5m]))
+
+      # Throughput recording rules
+      - record: marchproxy:throughput_bytes_5m
+        expr: rate(marchproxy_bytes_transferred_total[5m])
+
+      - record: marchproxy:throughput_gbps_5m
+        expr: rate(marchproxy_bytes_transferred_total[5m]) * 8 / 1e9
+
+      # Authentication metrics
+      - record: marchproxy:auth_success_rate_5m
+        expr: rate(marchproxy_auth_successful_total[5m]) / rate(marchproxy_auth_attempts_total[5m])
+
+      # Connection metrics
+      - record: marchproxy:connection_rate_5m
+        expr: rate(marchproxy_connections_opened_total[5m])
+
+      # XDP performance metrics
+      - record: marchproxy:xdp_packet_rate_5m
+        expr: rate(marchproxy_xdp_total_packets_total[5m])
+
+      - record: marchproxy:xdp_pass_rate_5m
+        expr: rate(marchproxy_xdp_passed_packets_total[5m]) / rate(marchproxy_xdp_total_packets_total[5m])

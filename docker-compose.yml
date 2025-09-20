@@ -51,12 +51,66 @@ services:
       target: manager
     container_name: marchproxy-manager
     environment:
+      # Application settings
       - DATABASE_URL=postgresql://marchproxy:${POSTGRES_PASSWORD:-marchproxy123}@postgres:5432/marchproxy
       - REDIS_URL=redis://:${REDIS_PASSWORD:-redis123}@redis:6379/0
       - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-this}
       - DEBUG=${DEBUG:-false}
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - MARCHPROXY_ENV=${MARCHPROXY_ENV:-production}
+
+      # Database fallback configuration
+      - DB_HOST=${DB_HOST:-postgres}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_NAME=${DB_NAME:-marchproxy}
+      - DB_USERNAME=${DB_USERNAME:-marchproxy}
+      - DB_PASSWORD=${DB_PASSWORD:-${POSTGRES_PASSWORD:-marchproxy123}}
+      - DB_SSL_MODE=${DB_SSL_MODE:-prefer}
+      - DB_POOL_SIZE=${DB_POOL_SIZE:-20}
+      - DB_MAX_OVERFLOW=${DB_MAX_OVERFLOW:-10}
+
+      # SMTP fallback configuration
+      - SMTP_HOST=${SMTP_HOST:-localhost}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USERNAME=${SMTP_USERNAME:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM=${SMTP_FROM:-marchproxy@company.com}
+      - SMTP_USE_TLS=${SMTP_USE_TLS:-true}
+      - SMTP_USE_SSL=${SMTP_USE_SSL:-false}
+
+      # Syslog fallback configuration
+      - SYSLOG_ENABLED=${SYSLOG_ENABLED:-true}
+      - SYSLOG_HOST=${SYSLOG_HOST:-localhost}
+      - SYSLOG_PORT=${SYSLOG_PORT:-514}
+      - SYSLOG_PROTOCOL=${SYSLOG_PROTOCOL:-udp}
+      - SYSLOG_FACILITY=${SYSLOG_FACILITY:-local0}
+      - SYSLOG_TAG=${SYSLOG_TAG:-marchproxy}
+
+      # Redis fallback configuration
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-redis123}
+      - REDIS_DATABASE=${REDIS_DATABASE:-0}
+      - REDIS_SSL=${REDIS_SSL:-false}
+      - REDIS_POOL_SIZE=${REDIS_POOL_SIZE:-10}
+
+      # License configuration
+      - LICENSE_KEY=${LICENSE_KEY:-}
+      - LICENSE_SERVER_URL=${LICENSE_SERVER_URL:-https://license.penguintech.io}
+      - LICENSE_CHECK_INTERVAL=${LICENSE_CHECK_INTERVAL:-24}
+      - LICENSE_OFFLINE_GRACE=${LICENSE_OFFLINE_GRACE:-7}
+
+      # Monitoring fallback configuration
+      - ALERT_EMAIL_DEFAULT=${ALERT_EMAIL_DEFAULT:-ops-team@company.com}
+      - ALERT_EMAIL_CRITICAL=${ALERT_EMAIL_CRITICAL:-critical-alerts@company.com}
+      - ALERT_EMAIL_LICENSE=${ALERT_EMAIL_LICENSE:-license-admin@company.com}
+      - ALERT_EMAIL_PERFORMANCE=${ALERT_EMAIL_PERFORMANCE:-performance-team@company.com}
+      - ALERT_EMAIL_SECURITY=${ALERT_EMAIL_SECURITY:-security-team@company.com}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
+      - PAGERDUTY_URL=${PAGERDUTY_URL:-}
+      - METRICS_RETENTION_DAYS=${METRICS_RETENTION_DAYS:-30}
+      - LOGS_RETENTION_DAYS=${LOGS_RETENTION_DAYS:-7}
+      - TRACES_RETENTION_DAYS=${TRACES_RETENTION_DAYS:-3}
     volumes:
       - ./manager:/app
       - manager_logs:/app/logs
@@ -86,13 +140,33 @@ services:
       target: proxy
     container_name: marchproxy-proxy
     environment:
+      # Manager connection
       - MANAGER_URL=http://manager:8000
+      - MANAGER_HOST=manager
+      - MANAGER_PORT=8000
       - CLUSTER_API_KEY=${CLUSTER_API_KEY:-default-api-key}
+
+      # Proxy configuration
+      - PROXY_ID=${PROXY_ID:-proxy-1}
+      - CLUSTER_ID=${CLUSTER_ID:-default}
       - LOG_LEVEL=${LOG_LEVEL:-info}
+
+      # Database and cache
       - REDIS_URL=redis://:${REDIS_PASSWORD:-redis123}@redis:6379/1
+
+      # Monitoring and tracing
       - METRICS_ENABLED=true
+      - METRICS_PORT=8081
+      - HEALTH_PORT=8080
       - TRACING_ENABLED=true
       - JAEGER_ENDPOINT=${JAEGER_ENDPOINT:-http://jaeger:14268/api/traces}
+
+      # Network acceleration
+      - ENABLE_XDP=${ENABLE_XDP:-true}
+      - ENABLE_EBPF=${ENABLE_EBPF:-true}
+      - ENABLE_DPDK=${ENABLE_DPDK:-false}
+      - ENABLE_AF_XDP=${ENABLE_AF_XDP:-false}
+      - ENABLE_SR_IOV=${ENABLE_SR_IOV:-false}
     volumes:
       - ./proxy/configs:/app/configs:ro
       - ./certs:/app/certs:ro
@@ -129,13 +203,48 @@ services:
       - '--storage.tsdb.retention.time=200h'
       - '--web.enable-lifecycle'
     volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./monitoring/prometheus:/etc/prometheus
       - prometheus_data:/prometheus
     ports:
       - "9090:9090"
     networks:
       - marchproxy-network
     restart: unless-stopped
+
+  # AlertManager for alert routing
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: marchproxy-alertmanager
+    restart: unless-stopped
+    environment:
+      # SMTP Configuration (pulled from manager settings)
+      - SMTP_HOST=${SMTP_HOST:-localhost}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_FROM=${SMTP_FROM:-marchproxy-alerts@company.com}
+      - SMTP_USERNAME=${SMTP_USERNAME:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+
+      # Alert email destinations
+      - ALERT_EMAIL_DEFAULT=${ALERT_EMAIL_DEFAULT:-ops-team@company.com}
+      - ALERT_EMAIL_CRITICAL=${ALERT_EMAIL_CRITICAL:-critical-alerts@company.com}
+      - ALERT_EMAIL_LICENSE=${ALERT_EMAIL_LICENSE:-license-admin@company.com}
+      - ALERT_EMAIL_PERFORMANCE=${ALERT_EMAIL_PERFORMANCE:-performance-team@company.com}
+      - ALERT_EMAIL_SECURITY=${ALERT_EMAIL_SECURITY:-security-team@company.com}
+
+      # Additional integrations
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
+      - PAGERDUTY_URL=${PAGERDUTY_URL:-}
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./monitoring/alertmanager:/etc/alertmanager
+      - alertmanager_data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://localhost:9093'
+    networks:
+      - marchproxy-network
 
   # Grafana for visualization
   grafana:
@@ -144,10 +253,11 @@ services:
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin123}
       - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
-      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
     ports:
       - "3000:3000"
     networks:
@@ -155,6 +265,55 @@ services:
     depends_on:
       - prometheus
     restart: unless-stopped
+
+  # Loki for log aggregation
+  loki:
+    image: grafana/loki:latest
+    container_name: marchproxy-loki
+    restart: unless-stopped
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./monitoring/loki/loki.yml:/etc/loki/local-config.yaml
+      - loki_data:/loki
+    networks:
+      - marchproxy-network
+
+  # Promtail for log collection
+  promtail:
+    image: grafana/promtail:latest
+    container_name: marchproxy-promtail
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/promtail/promtail.yml:/etc/promtail/config.yml
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: -config.file=/etc/promtail/config.yml
+    networks:
+      - marchproxy-network
+    depends_on:
+      - loki
+
+  # Configuration synchronization service
+  config-sync:
+    build:
+      context: ./monitoring/config-sync
+      dockerfile: Dockerfile
+    container_name: marchproxy-config-sync
+    restart: unless-stopped
+    environment:
+      - MANAGER_URL=http://manager:8000
+      - CLUSTER_API_KEY=${CLUSTER_API_KEY:-default-api-key}
+      - SYNC_INTERVAL=${CONFIG_SYNC_INTERVAL:-300}
+    volumes:
+      - ./monitoring/config-sync:/app
+      - config_sync_data:/etc/monitoring
+    networks:
+      - marchproxy-network
+    depends_on:
+      - manager
 
   # Jaeger for distributed tracing
   jaeger:
@@ -190,6 +349,12 @@ volumes:
   prometheus_data:
     driver: local
   grafana_data:
+    driver: local
+  alertmanager_data:
+    driver: local
+  loki_data:
+    driver: local
+  config_sync_data:
     driver: local
   manager_logs:
     driver: local
