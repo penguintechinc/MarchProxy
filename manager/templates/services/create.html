@@ -1,0 +1,168 @@
+{{extend 'layout.html'}}
+
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="d-flex align-items-center mb-4">
+                <a href="{{=URL('services')}}" class="btn btn-outline-secondary me-3">
+                    <i class="fas fa-arrow-left"></i>
+                </a>
+                <h2><i class="fas fa-plus"></i> {{=title}}</h2>
+            </div>
+
+            <div class="card">
+                <div class="card-body">
+                    {{if form.errors:}}
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <strong>Error:</strong>
+                        {{if form.errors.get('_general'):}}
+                        {{=form.errors['_general']}}
+                        {{else:}}
+                        Please correct the errors below.
+                        {{pass}}
+                    </div>
+                    {{pass}}
+
+                    {{=form}}
+
+                    <!-- Authentication Information -->
+                    <div class="mt-4 p-3 bg-light rounded">
+                        <h6><i class="fas fa-info-circle"></i> Authentication Information</h6>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <strong>None:</strong> No authentication required for this service.
+                            </div>
+                            <div class="col-md-6">
+                                <strong>Base64 Token:</strong> Simple token-based authentication.
+                            </div>
+                        </div>
+                        <div class="row mt-2">
+                            <div class="col-md-12">
+                                <strong>JWT Token:</strong> JSON Web Token with rotation capability for enhanced security.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Cluster Information -->
+                    {{if clusters:}}
+                    <div class="mt-3 p-3 bg-info bg-opacity-10 rounded">
+                        <h6><i class="fas fa-server"></i> Available Clusters</h6>
+                        <div class="row">
+                            {{for cluster in clusters:}}
+                            <div class="col-md-6 mb-2">
+                                <div class="d-flex align-items-center">
+                                    <span class="badge bg-primary me-2">{{=cluster.name}}</span>
+                                    {{if cluster.description:}}
+                                    <small class="text-muted">{{=cluster.description}}</small>
+                                    {{pass}}
+                                </div>
+                            </div>
+                            {{pass}}
+                        </div>
+                    </div>
+                    {{pass}}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Enhanced form styling for py4web forms
+    const formElements = document.querySelectorAll('input, select, textarea');
+    formElements.forEach(element => {
+        if (!element.classList.contains('btn')) {
+            element.classList.add('form-control');
+        }
+    });
+
+    // Style buttons
+    const buttons = document.querySelectorAll('input[type="submit"]');
+    buttons.forEach(button => {
+        button.classList.add('btn', 'btn-primary');
+        button.innerHTML = '<i class="fas fa-save"></i> Create Service';
+    });
+
+    // Add form groups
+    const labels = document.querySelectorAll('label');
+    labels.forEach(label => {
+        const input = document.querySelector(`#${label.getAttribute('for')}`);
+        if (input) {
+            const wrapper = document.createElement('div');
+            wrapper.classList.add('mb-3');
+            input.parentNode.insertBefore(wrapper, input);
+            wrapper.appendChild(label);
+            wrapper.appendChild(input);
+
+            // Add comment as help text
+            const comment = input.getAttribute('comment') || input.getAttribute('data-comment');
+            if (comment) {
+                const helpText = document.createElement('div');
+                helpText.classList.add('form-text');
+                helpText.textContent = comment;
+                wrapper.appendChild(helpText);
+            }
+        }
+        label.classList.add('form-label');
+    });
+
+    // Authentication type help
+    const authTypeSelect = document.querySelector('select[name="auth_type"]');
+    if (authTypeSelect) {
+        authTypeSelect.addEventListener('change', function() {
+            const helpDiv = document.querySelector('#auth-help');
+            if (helpDiv) helpDiv.remove();
+
+            const help = document.createElement('div');
+            help.id = 'auth-help';
+            help.classList.add('alert', 'alert-info', 'mt-2');
+
+            switch (this.value) {
+                case 'none':
+                    help.innerHTML = '<i class="fas fa-info-circle"></i> No authentication will be required for this service.';
+                    break;
+                case 'token':
+                    help.innerHTML = '<i class="fas fa-key"></i> A Base64 token will be generated for authentication. Mutual exclusive with JWT.';
+                    break;
+                case 'jwt':
+                    help.innerHTML = '<i class="fas fa-shield-alt"></i> JWT tokens will be used with rotation capability. Mutual exclusive with Base64 tokens.';
+                    break;
+            }
+
+            this.parentNode.appendChild(help);
+        });
+    }
+});
+</script>
+
+<style>
+.card {
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    border: 1px solid rgba(0, 0, 0, 0.125);
+}
+
+.form-label {
+    font-weight: 600;
+    color: #495057;
+}
+
+.form-control:focus {
+    border-color: #86b7fe;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+.alert {
+    border: none;
+    border-radius: 0.5rem;
+}
+
+.badge {
+    font-size: 0.75em;
+}
+
+.bg-opacity-10 {
+    background-color: rgba(13, 110, 253, 0.1) !important;
+}
+</style>

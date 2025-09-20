@@ -1,0 +1,26 @@
+# MarchProxy Logstash Configuration
+# Pre-configured for log processing
+
+node.name: "logstash-1"
+path.data: /usr/share/logstash/data
+path.logs: /usr/share/logstash/logs
+path.settings: /usr/share/logstash/config
+
+# Pipeline configuration
+pipeline.workers: 2
+pipeline.batch.size: 1000
+pipeline.batch.delay: 50
+
+# Queue configuration
+queue.type: memory
+queue.max_bytes: 1gb
+
+# HTTP API
+http.host: "0.0.0.0"
+http.port: 9600
+
+# Monitoring
+xpack.monitoring.enabled: false
+
+# Logging
+log.level: info

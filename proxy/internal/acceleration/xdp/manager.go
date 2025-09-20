@@ -1,3 +1,5 @@
+// +build xdp
+
 package xdp
 
 import (

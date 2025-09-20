@@ -1,0 +1,505 @@
+{{extend 'layout.html'}}
+
+<div class="container">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex align-items-center justify-content-between mb-4">
+                <div class="d-flex align-items-center">
+                    <a href="{{=URL('services')}}" class="btn btn-outline-secondary me-3">
+                        <i class="fas fa-arrow-left"></i>
+                    </a>
+                    <div>
+                        <h2><i class="fas fa-network-wired"></i> {{=service['name']}}</h2>
+                        <div class="d-flex align-items-center mt-1">
+                            {{if service['is_active']:}}
+                            <span class="badge bg-success me-2">Active</span>
+                            {{else:}}
+                            <span class="badge bg-danger me-2">Inactive</span>
+                            {{pass}}
+                            <span class="badge bg-primary">{{=cluster.name}}</span>
+                        </div>
+                    </div>
+                </div>
+
+                {{if has_write_access:}}
+                <div class="btn-group">
+                    <a href="{{=URL('services/edit', service['id'])}}" class="btn btn-primary">
+                        <i class="fas fa-edit"></i> Edit
+                    </a>
+                    <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#deleteModal">
+                        <i class="fas fa-trash"></i> Delete
+                    </button>
+                </div>
+                {{pass}}
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Service Details -->
+        <div class="col-lg-8">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5><i class="fas fa-info-circle"></i> Service Details</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>Target</h6>
+                            <p><code class="fs-6">{{=service['ip_fqdn']}}</code></p>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>Collection</h6>
+                            <p><span class="badge bg-secondary fs-6">{{=service['collection']}}</span></p>
+                        </div>
+                    </div>
+
+                    {{if service['description']:}}
+                    <div class="row">
+                        <div class="col-12">
+                            <h6>Description</h6>
+                            <p>{{=service['description']}}</p>
+                        </div>
+                    </div>
+                    {{pass}}
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>Created</h6>
+                            <p class="text-muted">{{=service.get('created_at', 'N/A')}}</p>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>Last Updated</h6>
+                            <p class="text-muted">{{=service.get('updated_at', 'N/A')}}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Authentication Configuration -->
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5><i class="fas fa-shield-alt"></i> Authentication</h5>
+                    {{if service['auth_type'] == 'none':}}
+                    <span class="badge bg-secondary">No Authentication</span>
+                    {{elif service['auth_type'] == 'token':}}
+                    <span class="badge bg-info">Base64 Token</span>
+                    {{elif service['auth_type'] == 'jwt':}}
+                    <span class="badge bg-success">JWT</span>
+                    {{pass}}
+                </div>
+                <div class="card-body">
+                    {{if service['auth_type'] == 'none':}}
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i>
+                        This service does not require authentication.
+                    </div>
+
+                    {{elif service['auth_type'] == 'token':}}
+                    <div class="mb-3">
+                        <label class="form-label">Base64 Token</label>
+                        <div class="input-group">
+                            <input type="password" class="form-control" id="tokenValue" value="{{=service.get('token', '')}}" readonly>
+                            <button class="btn btn-outline-secondary" type="button" onclick="toggleToken()">
+                                <i class="fas fa-eye" id="tokenIcon"></i>
+                            </button>
+                            <button class="btn btn-outline-primary" type="button" onclick="copyToken()">
+                                <i class="fas fa-copy"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    {{if has_write_access:}}
+                    <button class="btn btn-warning" onclick="regenerateToken()">
+                        <i class="fas fa-refresh"></i> Regenerate Token
+                    </button>
+                    {{pass}}
+
+                    {{elif service['auth_type'] == 'jwt':}}
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Current JWT Secret</label>
+                                <div class="input-group">
+                                    <input type="password" class="form-control" id="jwtSecret" value="{{=service.get('jwt_secret', '')}}" readonly>
+                                    <button class="btn btn-outline-secondary" type="button" onclick="toggleJwtSecret()">
+                                        <i class="fas fa-eye" id="jwtIcon"></i>
+                                    </button>
+                                    <button class="btn btn-outline-primary" type="button" onclick="copyJwtSecret()">
+                                        <i class="fas fa-copy"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {{if service.get('jwt_secret_new'):}}
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">New JWT Secret (Pending)</label>
+                                <div class="input-group">
+                                    <input type="password" class="form-control" id="jwtSecretNew" value="{{=service['jwt_secret_new']}}" readonly>
+                                    <button class="btn btn-outline-secondary" type="button" onclick="toggleJwtSecretNew()">
+                                        <i class="fas fa-eye" id="jwtIconNew"></i>
+                                    </button>
+                                    <button class="btn btn-outline-primary" type="button" onclick="copyJwtSecretNew()">
+                                        <i class="fas fa-copy"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        {{pass}}
+                    </div>
+
+                    {{if has_write_access:}}
+                    <div class="btn-group">
+                        {{if service.get('jwt_secret_new'):}}
+                        <button class="btn btn-success" onclick="finalizeJwtRotation()">
+                            <i class="fas fa-check"></i> Finalize Rotation
+                        </button>
+                        {{else:}}
+                        <button class="btn btn-warning" onclick="rotateJwtSecret()">
+                            <i class="fas fa-refresh"></i> Rotate JWT Secret
+                        </button>
+                        {{pass}}
+                    </div>
+                    {{pass}}
+
+                    {{if service.get('jwt_secret_new'):}}
+                    <div class="alert alert-warning mt-3">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <strong>JWT Rotation in Progress</strong><br>
+                        A new JWT secret has been generated. Update your services to use the new secret, then finalize the rotation.
+                    </div>
+                    {{pass}}
+                    {{pass}}
+                </div>
+            </div>
+        </div>
+
+        <!-- User Assignments -->
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5><i class="fas fa-users"></i> User Access</h5>
+                    {{if has_write_access:}}
+                    <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#assignUserModal">
+                        <i class="fas fa-plus"></i> Assign
+                    </button>
+                    {{pass}}
+                </div>
+                <div class="card-body">
+                    {{if assignments:}}
+                    {{for assignment in assignments:}}
+                    <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+                        <div>
+                            <strong>{{=assignment.auth_user.username}}</strong>
+                            <br><small class="text-muted">{{=assignment.auth_user.email}}</small>
+                        </div>
+                        <div class="d-flex align-items-center">
+                            <span class="badge bg-primary me-2">{{=assignment.user_service_assignments.role}}</span>
+                            {{if has_write_access and assignment.user_service_assignments.user_id != user.id:}}
+                            <button class="btn btn-sm btn-outline-danger" onclick="removeUser({{=assignment.user_service_assignments.user_id}})">
+                                <i class="fas fa-times"></i>
+                            </button>
+                            {{pass}}
+                        </div>
+                    </div>
+                    {{pass}}
+                    {{else:}}
+                    <p class="text-muted text-center py-3">No users assigned to this service.</p>
+                    {{pass}}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+{{if has_write_access:}}
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Delete Service</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the service <strong>{{=service['name']}}</strong>?</p>
+                <p class="text-danger">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form method="POST" action="{{=URL('services/delete', service['id'])}}" style="display: inline;">
+                    <button type="submit" class="btn btn-danger">Delete Service</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Assign User Modal -->
+<div class="modal fade" id="assignUserModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Assign User to Service</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="assignUserForm">
+                    <div class="mb-3">
+                        <label for="userId" class="form-label">User</label>
+                        <select class="form-select" id="userId" required>
+                            <option value="">Select a user...</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="userRole" class="form-label">Role</label>
+                        <select class="form-select" id="userRole" required>
+                            <option value="viewer">Viewer</option>
+                            <option value="editor">Editor</option>
+                            <option value="owner">Owner</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="assignUser()">Assign User</button>
+            </div>
+        </div>
+    </div>
+</div>
+{{pass}}
+
+<script>
+// Token visibility toggle
+function toggleToken() {
+    const tokenInput = document.getElementById('tokenValue');
+    const icon = document.getElementById('tokenIcon');
+
+    if (tokenInput.type === 'password') {
+        tokenInput.type = 'text';
+        icon.className = 'fas fa-eye-slash';
+    } else {
+        tokenInput.type = 'password';
+        icon.className = 'fas fa-eye';
+    }
+}
+
+function copyToken() {
+    const tokenInput = document.getElementById('tokenValue');
+    tokenInput.select();
+    document.execCommand('copy');
+    showToast('Token copied to clipboard');
+}
+
+// JWT secret visibility toggles
+function toggleJwtSecret() {
+    const input = document.getElementById('jwtSecret');
+    const icon = document.getElementById('jwtIcon');
+
+    if (input.type === 'password') {
+        input.type = 'text';
+        icon.className = 'fas fa-eye-slash';
+    } else {
+        input.type = 'password';
+        icon.className = 'fas fa-eye';
+    }
+}
+
+function toggleJwtSecretNew() {
+    const input = document.getElementById('jwtSecretNew');
+    const icon = document.getElementById('jwtIconNew');
+
+    if (input.type === 'password') {
+        input.type = 'text';
+        icon.className = 'fas fa-eye-slash';
+    } else {
+        input.type = 'password';
+        icon.className = 'fas fa-eye';
+    }
+}
+
+function copyJwtSecret() {
+    const input = document.getElementById('jwtSecret');
+    input.select();
+    document.execCommand('copy');
+    showToast('JWT secret copied to clipboard');
+}
+
+function copyJwtSecretNew() {
+    const input = document.getElementById('jwtSecretNew');
+    input.select();
+    document.execCommand('copy');
+    showToast('New JWT secret copied to clipboard');
+}
+
+// Authentication management
+function regenerateToken() {
+    if (confirm('Are you sure you want to regenerate the token? The old token will stop working immediately.')) {
+        fetch(`/api/services/{{=service['id']}}/regenerate-token`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                location.reload();
+            } else {
+                alert('Error regenerating token: ' + (data.message || 'Unknown error'));
+            }
+        })
+        .catch(error => {
+            alert('Error regenerating token: ' + error.message);
+        });
+    }
+}
+
+function rotateJwtSecret() {
+    if (confirm('Are you sure you want to rotate the JWT secret? This will generate a new secret while keeping the old one active.')) {
+        fetch(`/api/services/{{=service['id']}}/rotate-jwt`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                location.reload();
+            } else {
+                alert('Error rotating JWT secret: ' + (data.message || 'Unknown error'));
+            }
+        })
+        .catch(error => {
+            alert('Error rotating JWT secret: ' + error.message);
+        });
+    }
+}
+
+function finalizeJwtRotation() {
+    if (confirm('Are you sure you want to finalize the JWT rotation? The old secret will stop working immediately.')) {
+        fetch(`/api/services/{{=service['id']}}/finalize-jwt-rotation`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                location.reload();
+            } else {
+                alert('Error finalizing JWT rotation: ' + (data.message || 'Unknown error'));
+            }
+        })
+        .catch(error => {
+            alert('Error finalizing JWT rotation: ' + error.message);
+        });
+    }
+}
+
+// User management
+function assignUser() {
+    const userId = document.getElementById('userId').value;
+    const role = document.getElementById('userRole').value;
+
+    if (!userId || !role) {
+        alert('Please select a user and role');
+        return;
+    }
+
+    fetch(`/api/services/{{=service['id']}}/assign-user`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            user_id: parseInt(userId),
+            role: role
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            location.reload();
+        } else {
+            alert('Error assigning user: ' + (data.message || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        alert('Error assigning user: ' + error.message);
+    });
+}
+
+function removeUser(userId) {
+    if (confirm('Are you sure you want to remove this user from the service?')) {
+        fetch(`/api/services/{{=service['id']}}/remove-user`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                user_id: userId
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                location.reload();
+            } else {
+                alert('Error removing user: ' + (data.message || 'Unknown error'));
+            }
+        })
+        .catch(error => {
+            alert('Error removing user: ' + error.message);
+        });
+    }
+}
+
+function showToast(message) {
+    // Simple toast implementation
+    const toast = document.createElement('div');
+    toast.className = 'position-fixed top-0 end-0 p-3';
+    toast.style.zIndex = '1050';
+    toast.innerHTML = `
+        <div class="toast show" role="alert">
+            <div class="toast-body">
+                ${message}
+            </div>
+        </div>
+    `;
+    document.body.appendChild(toast);
+
+    setTimeout(() => {
+        document.body.removeChild(toast);
+    }, 3000);
+}
+</script>
+
+<style>
+.card {
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    border: 1px solid rgba(0, 0, 0, 0.125);
+}
+
+.badge {
+    font-size: 0.75em;
+}
+
+code {
+    color: #e83e8c;
+    font-size: 0.875em;
+}
+
+.fs-6 {
+    font-size: 1rem !important;
+}
+
+.border-bottom:last-child {
+    border-bottom: none !important;
+}
+</style>

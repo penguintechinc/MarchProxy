@@ -1,0 +1,36 @@
+# MarchProxy Kibana Configuration
+# Pre-configured for MarchProxy log analysis
+
+server.name: "marchproxy-kibana"
+server.host: "0.0.0.0"
+server.port: 5601
+
+# Elasticsearch connection
+elasticsearch.hosts: ["http://elasticsearch:9200"]
+
+# Index patterns
+kibana.defaultAppId: "discover"
+kibana.index: ".kibana"
+
+# Logging
+logging.appenders:
+  default:
+    type: console
+    layout:
+      type: json
+logging.root:
+  level: info
+
+# Security (disabled for development)
+xpack.security.enabled: false
+xpack.license.self_generated.type: basic
+
+# Monitoring
+xpack.monitoring.ui.enabled: false
+
+# Performance
+elasticsearch.requestTimeout: 30000
+elasticsearch.shardTimeout: 30000
+
+# Default index pattern for MarchProxy logs
+kibana.defaultIndex: "marchproxy-*"

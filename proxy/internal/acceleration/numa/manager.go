@@ -1,3 +1,5 @@
+// +build numa
+
 package numa
 
 import (

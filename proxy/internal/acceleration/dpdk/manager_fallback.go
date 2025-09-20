@@ -3,117 +3,77 @@
 package dpdk
 
 import (
-	"fmt"
+	"log"
 	"time"
 )
 
-// DPDKManager handles DPDK initialization and packet processing (fallback implementation)
+// DPDKManager handles DPDK acceleration (fallback implementation)
 type DPDKManager struct {
-	enabled bool
-	stats   *DPDKStats
 	config  *DPDKConfig
+	running bool
 }
 
-// DPDKPort represents a DPDK-enabled network port (fallback)
-type DPDKPort struct {
-	ID            uint16
-	NbRxQueues    uint16
-	NbTxQueues    uint16
-	LinkStatus    bool
+// DPDKConfig holds DPDK configuration
+type DPDKConfig struct {
+	Enabled      bool
+	DriverType   string
+	HugePages    int
+	Cores        []int
+	MemChannels  int
+	PciDevices   []string
+}
+
+// DPDKStats holds DPDK statistics
+type DPDKStats struct {
 	RxPackets     uint64
 	TxPackets     uint64
 	RxBytes       uint64
 	TxBytes       uint64
-	RxDropped     uint64
-	TxDropped     uint64
-}
-
-// DPDKPacket represents a packet in DPDK format (fallback)
-type DPDKPacket struct {
-	Data      []byte
-	Length    uint16
-	PortID    uint16
-	QueueID   uint16
-	Timestamp time.Time
-}
-
-// DPDKStats holds DPDK performance statistics (fallback)
-type DPDKStats struct {
-	TotalRxPackets    uint64
-	TotalTxPackets    uint64
-	TotalRxBytes      uint64
-	TotalTxBytes      uint64
-	TotalRxDropped    uint64
-	TotalTxDropped    uint64
-	WorkerUtilization []float64
-	PacketsPerSecond  uint64
-	BytesPerSecond    uint64
-	LastUpdate        time.Time
-}
-
-// DPDKConfig holds DPDK configuration parameters (fallback)
-type DPDKConfig struct {
-	EALArgs           []string
-	NbMbufs           uint32
-	MempoolCacheSize  uint32
-	DataRoomSize      uint16
-	RxDescriptors     uint16
-	TxDescriptors     uint16
-	RxQueuesPerPort   uint16
-	TxQueuesPerPort   uint16
-	WorkerCores       []int
-	BurstSize         uint16
-	PrefetchOffset    uint8
+	DroppedPackets uint64
+	ErrorPackets  uint64
+	LastUpdate    time.Time
 }
 
 // NewDPDKManager creates a new DPDK manager (fallback)
-func NewDPDKManager(enabled bool, config *DPDKConfig) *DPDKManager {
+func NewDPDKManager(config *DPDKConfig) (*DPDKManager, error) {
 	return &DPDKManager{
-		enabled: false, // Always disabled in fallback mode
-		stats: &DPDKStats{
-			LastUpdate: time.Now(),
-		},
 		config: config,
-	}
+	}, nil
 }
 
-// Initialize initializes DPDK EAL and sets up memory pools (fallback)
+// Initialize initializes DPDK (fallback - no-op)
 func (dm *DPDKManager) Initialize() error {
-	fmt.Printf("DPDK: Fallback mode - DPDK support not compiled in\n")
+	log.Printf("DPDK: Using fallback implementation (DPDK not available)")
 	return nil
 }
 
-// AddPort configures and starts a DPDK port (fallback)
-func (dm *DPDKManager) AddPort(portID uint16) error {
-	fmt.Printf("DPDK: Fallback mode - cannot add port %d\n", portID)
+// Start starts DPDK processing (fallback - no-op)
+func (dm *DPDKManager) Start() error {
+	dm.running = true
+	log.Printf("DPDK: Fallback implementation started")
 	return nil
 }
 
-// StartWorkers starts DPDK worker threads for packet processing (fallback)
-func (dm *DPDKManager) StartWorkers() error {
-	fmt.Printf("DPDK: Fallback mode - no workers to start\n")
-	return nil
-}
-
-// Stop stops all DPDK workers and cleans up resources (fallback)
+// Stop stops DPDK processing (fallback - no-op)
 func (dm *DPDKManager) Stop() error {
-	fmt.Printf("DPDK: Fallback mode - cleanup complete\n")
+	dm.running = false
+	log.Printf("DPDK: Fallback implementation stopped")
 	return nil
 }
 
-// GetStats returns current DPDK statistics (fallback)
+// IsRunning returns whether DPDK is running
+func (dm *DPDKManager) IsRunning() bool {
+	return dm.running
+}
+
+// GetStats returns DPDK statistics (fallback - empty stats)
 func (dm *DPDKManager) GetStats() *DPDKStats {
 	return &DPDKStats{
 		LastUpdate: time.Now(),
 	}
 }
 
-// IsEnabled returns whether DPDK is enabled (fallback)
-func (dm *DPDKManager) IsEnabled() bool {
-	return false
-}
-
-// GetPortStats returns statistics for a specific port (fallback)
-func (dm *DPDKManager) GetPortStats(portID uint16) (*DPDKPort, error) {
-	return nil, fmt.Errorf("DPDK not available in fallback mode")
+// GetConfig returns DPDK configuration
+func (dm *DPDKManager) GetConfig() *DPDKConfig {
+	return dm.config
 }

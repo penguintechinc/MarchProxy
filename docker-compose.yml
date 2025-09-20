@@ -78,13 +78,13 @@ services:
       - SMTP_USE_TLS=${SMTP_USE_TLS:-true}
       - SMTP_USE_SSL=${SMTP_USE_SSL:-false}
 
-      # Syslog fallback configuration
+      # Syslog configuration for ELK integration
       - SYSLOG_ENABLED=${SYSLOG_ENABLED:-true}
-      - SYSLOG_HOST=${SYSLOG_HOST:-localhost}
-      - SYSLOG_PORT=${SYSLOG_PORT:-514}
+      - SYSLOG_HOST=${SYSLOG_HOST:-logstash}
+      - SYSLOG_PORT=${SYSLOG_PORT:-5514}
       - SYSLOG_PROTOCOL=${SYSLOG_PROTOCOL:-udp}
       - SYSLOG_FACILITY=${SYSLOG_FACILITY:-local0}
-      - SYSLOG_TAG=${SYSLOG_TAG:-marchproxy}
+      - SYSLOG_TAG=${SYSLOG_TAG:-marchproxy-manager}
 
       # Redis fallback configuration
       - REDIS_HOST=${REDIS_HOST:-redis}
@@ -124,7 +124,18 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      logstash:
+        condition: service_started
     restart: unless-stopped
+    logging:
+      driver: syslog
+      options:
+        syslog-address: "udp://logstash:5514"
+        syslog-facility: "local0"
+        tag: "marchproxy-manager"
+    labels:
+      - "service=marchproxy-manager"
+      - "component=manager"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -161,6 +172,14 @@ services:
       - TRACING_ENABLED=true
       - JAEGER_ENDPOINT=${JAEGER_ENDPOINT:-http://jaeger:14268/api/traces}
 
+      # Syslog configuration for ELK integration
+      - SYSLOG_ENABLED=${SYSLOG_ENABLED:-true}
+      - SYSLOG_HOST=${SYSLOG_HOST:-logstash}
+      - SYSLOG_PORT=${SYSLOG_PORT:-5514}
+      - SYSLOG_PROTOCOL=${SYSLOG_PROTOCOL:-udp}
+      - SYSLOG_FACILITY=${SYSLOG_FACILITY:-local1}
+      - SYSLOG_TAG=${SYSLOG_TAG:-marchproxy-proxy}
+
       # Network acceleration
       - ENABLE_XDP=${ENABLE_XDP:-true}
       - ENABLE_EBPF=${ENABLE_EBPF:-true}
@@ -174,8 +193,8 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      - "8080:8080"   # Admin API
-      - "8090:8090"   # Metrics
+      - "8080:8080"   # Health/Admin API
+      - "8081:8081"   # Metrics
     networks:
       - marchproxy-network
     depends_on:
@@ -183,7 +202,18 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      logstash:
+        condition: service_started
     restart: unless-stopped
+    logging:
+      driver: syslog
+      options:
+        syslog-address: "udp://logstash:5514"
+        syslog-facility: "local1"
+        tag: "marchproxy-proxy"
+    labels:
+      - "service=marchproxy-proxy"
+      - "component=proxy"
     healthcheck:
       test: ["CMD", "./marchproxy-health"]
       interval: 30s
@@ -315,6 +345,78 @@ services:
     depends_on:
       - manager
 
+  # Elasticsearch for log storage (ELK Stack)
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: marchproxy-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - cluster.name=marchproxy-logs
+      - node.name=elasticsearch-1
+      - xpack.security.enabled=false
+      - xpack.license.self_generated.type=basic
+      - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
+    volumes:
+      - ./monitoring/elasticsearch/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    networks:
+      - marchproxy-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Logstash for log processing (ELK Stack)
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.11.0
+    container_name: marchproxy-logstash
+    environment:
+      - "LS_JAVA_OPTS=-Xms512m -Xmx512m"
+    volumes:
+      - ./monitoring/logstash/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
+      - ./monitoring/logstash/pipeline:/usr/share/logstash/pipeline:ro
+      - ./monitoring/logstash/templates:/usr/share/logstash/templates:ro
+    ports:
+      - "5044:5044"    # Beats input
+      - "5514:5514/udp" # Syslog input
+      - "9600:9600"    # API
+    networks:
+      - marchproxy-network
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Kibana for log visualization (ELK Stack)
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: marchproxy-kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - SERVER_NAME=marchproxy-kibana
+      - XPACK_SECURITY_ENABLED=false
+    volumes:
+      - ./monitoring/kibana/kibana.yml:/usr/share/kibana/config/kibana.yml:ro
+      - ./monitoring/kibana/dashboards:/usr/share/kibana/config/dashboards:ro
+    ports:
+      - "5601:5601"
+    networks:
+      - marchproxy-network
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5601/api/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
   # Jaeger for distributed tracing
   jaeger:
     image: jaegertracing/all-in-one:latest
@@ -355,6 +457,8 @@ volumes:
   loki_data:
     driver: local
   config_sync_data:
+    driver: local
+  elasticsearch_data:
     driver: local
   manager_logs:
     driver: local

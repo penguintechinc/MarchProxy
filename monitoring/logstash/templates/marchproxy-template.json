@@ -1,0 +1,96 @@
+{
+  "index_patterns": ["marchproxy-*"],
+  "version": 1,
+  "settings": {
+    "index": {
+      "lifecycle.name": "marchproxy-policy",
+      "lifecycle.rollover_alias": "marchproxy",
+      "refresh_interval": "5s",
+      "number_of_shards": 1,
+      "number_of_replicas": 0,
+      "mapping": {
+        "total_fields": {
+          "limit": 2000
+        }
+      }
+    }
+  },
+  "mappings": {
+    "properties": {
+      "@timestamp": {
+        "type": "date"
+      },
+      "level": {
+        "type": "keyword"
+      },
+      "service": {
+        "type": "keyword"
+      },
+      "component": {
+        "type": "keyword"
+      },
+      "event_type": {
+        "type": "keyword"
+      },
+      "log_message": {
+        "type": "text",
+        "analyzer": "standard"
+      },
+      "username": {
+        "type": "keyword"
+      },
+      "client_ip": {
+        "type": "ip"
+      },
+      "src_ip": {
+        "type": "ip"
+      },
+      "dst_ip": {
+        "type": "ip"
+      },
+      "src_port": {
+        "type": "integer"
+      },
+      "dst_port": {
+        "type": "integer"
+      },
+      "protocol": {
+        "type": "keyword"
+      },
+      "http_method": {
+        "type": "keyword"
+      },
+      "api_path": {
+        "type": "keyword"
+      },
+      "response_code": {
+        "type": "integer"
+      },
+      "response_time": {
+        "type": "float"
+      },
+      "auth_result": {
+        "type": "keyword"
+      },
+      "action": {
+        "type": "keyword"
+      },
+      "geoip": {
+        "properties": {
+          "city_name": {
+            "type": "keyword"
+          },
+          "country_name": {
+            "type": "keyword"
+          },
+          "country_code2": {
+            "type": "keyword"
+          },
+          "location": {
+            "type": "geo_point"
+          }
+        }
+      }
+    }
+  }
+}

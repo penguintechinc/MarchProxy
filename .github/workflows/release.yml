@@ -4,15 +4,72 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., v1.0.0)'
+        required: true
+        type: string
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-and-push:
-    name: Build and Push Images
+  validate-release:
+    name: Validate Release
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Determine version
+      id: version
+      run: |
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          VERSION="${{ github.event.inputs.version }}"
+          TAG="${{ github.event.inputs.version }}"
+        else
+          TAG=${GITHUB_REF#refs/tags/}
+          VERSION=${TAG#v}
+        fi
+
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "tag=$TAG" >> $GITHUB_OUTPUT
+        echo "Releasing version: $VERSION"
+
+    - name: Validate version format
+      run: |
+        VERSION="${{ steps.version.outputs.version }}"
+        if [[ ! $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+          echo "Invalid version format: $VERSION"
+          echo "Expected format: X.Y.Z or X.Y.Z.B"
+          exit 1
+        fi
+
+    - name: Check version file consistency
+      run: |
+        if [ -f .version ]; then
+          FILE_VERSION=$(cat .version)
+          if [ "v$FILE_VERSION" != "${{ steps.version.outputs.tag }}" ]; then
+            echo "Version mismatch: tag=${{ steps.version.outputs.tag }}, file=v$FILE_VERSION"
+            exit 1
+          fi
+        else
+          echo "Warning: .version file not found"
+        fi
+
+  build-release-artifacts:
+    name: Build Release Artifacts
+    runs-on: ubuntu-latest
+    needs: [validate-release]
+
     permissions:
       contents: read
       packages: write
@@ -27,54 +84,56 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    - name: Log in to GitHub Container Registry
+    - name: Log in to Container Registry
       uses: docker/login-action@v3
       with:
         registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Extract metadata
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-        tags: |
-          type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}}
-          type=semver,pattern={{major}}
-          type=sha
-
-    - name: Build and push Manager image
+    - name: Build and push manager image
       uses: docker/build-push-action@v5
       with:
-        context: ./manager
+        context: .
+        target: manager
         platforms: linux/amd64,linux/arm64
         push: true
         tags: |
-          ${{ env.REGISTRY }}/marchproxy/manager:${{ steps.meta.outputs.version }}
-          ${{ env.REGISTRY }}/marchproxy/manager:latest
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/manager:${{ needs.validate-release.outputs.tag }}
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/manager:latest
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
-    - name: Build and push Proxy image
+    - name: Build and push proxy image
       uses: docker/build-push-action@v5
       with:
-        context: ./proxy
+        context: .
+        target: proxy
         platforms: linux/amd64,linux/arm64
         push: true
         tags: |
-          ${{ env.REGISTRY }}/marchproxy/proxy:${{ steps.meta.outputs.version }}
-          ${{ env.REGISTRY }}/marchproxy/proxy:latest
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/proxy:${{ needs.validate-release.outputs.tag }}
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/proxy:latest
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
-  create-release:
-    name: Create GitHub Release
+  create-release-binaries:
+    name: Create Release Binaries
     runs-on: ubuntu-latest
-    needs: build-and-push
-    permissions:
-      contents: write
+    needs: [validate-release]
+    strategy:
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+          - os: linux
+            arch: arm64
+          - os: darwin
+            arch: amd64
+          - os: darwin
+            arch: arm64
+          - os: windows
+            arch: amd64
 
     steps:
     - name: Checkout code
@@ -85,100 +144,134 @@ jobs:
       with:
         go-version: '1.21'
 
-    - name: Build binaries
-      run: |
-        # Build proxy binaries
-        cd proxy
-        GOOS=linux GOARCH=amd64 go build -o ../dist/marchproxy-proxy-linux-amd64 ./cmd/proxy
-        GOOS=linux GOARCH=arm64 go build -o ../dist/marchproxy-proxy-linux-arm64 ./cmd/proxy
-        GOOS=darwin GOARCH=amd64 go build -o ../dist/marchproxy-proxy-darwin-amd64 ./cmd/proxy
-        GOOS=darwin GOARCH=arm64 go build -o ../dist/marchproxy-proxy-darwin-arm64 ./cmd/proxy
-        cd ..
+    - name: Create releases directory
+      run: mkdir -p releases
 
-        # Create tarballs
-        tar czf dist/marchproxy-proxy-linux-amd64.tar.gz -C dist marchproxy-proxy-linux-amd64
-        tar czf dist/marchproxy-proxy-linux-arm64.tar.gz -C dist marchproxy-proxy-linux-arm64
-        tar czf dist/marchproxy-proxy-darwin-amd64.tar.gz -C dist marchproxy-proxy-darwin-amd64
-        tar czf dist/marchproxy-proxy-darwin-arm64.tar.gz -C dist marchproxy-proxy-darwin-arm64
+    - name: Build proxy binary
+      run: |
+        cd proxy
+        GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} go build \
+          -ldflags="-w -s -X main.version=${{ needs.validate-release.outputs.version }}" \
+          -o ../releases/marchproxy-proxy-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.os == 'windows' && '.exe' || '' }} \
+          ./cmd/proxy
+
+    - name: Build health check binary
+      run: |
+        cd proxy
+        GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} go build \
+          -ldflags="-w -s -X main.version=${{ needs.validate-release.outputs.version }}" \
+          -o ../releases/marchproxy-health-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.os == 'windows' && '.exe' || '' }} \
+          ./cmd/health
+
+    - name: Build metrics binary
+      run: |
+        cd proxy
+        GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} go build \
+          -ldflags="-w -s -X main.version=${{ needs.validate-release.outputs.version }}" \
+          -o ../releases/marchproxy-metrics-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.os == 'windows' && '.exe' || '' }} \
+          ./cmd/metrics
+
+    - name: Create binary archive
+      run: |
+        cd releases
+        if [ "${{ matrix.os }}" = "windows" ]; then
+          zip marchproxy-${{ needs.validate-release.outputs.tag }}-${{ matrix.os }}-${{ matrix.arch }}.zip \
+            marchproxy-*-${{ matrix.os }}-${{ matrix.arch }}.exe
+        else
+          tar -czf marchproxy-${{ needs.validate-release.outputs.tag }}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz \
+            marchproxy-*-${{ matrix.os }}-${{ matrix.arch }}
+        fi
+
+    - name: Upload binary artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: release-binaries-${{ matrix.os }}-${{ matrix.arch }}
+        path: releases/marchproxy-${{ needs.validate-release.outputs.tag }}-${{ matrix.os }}-${{ matrix.arch }}.*
+
+  test-release:
+    name: Test Release
+    runs-on: ubuntu-latest
+    needs: [build-release-artifacts, validate-release]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Test release images
+      run: |
+        # Pull the release images
+        docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/manager:${{ needs.validate-release.outputs.tag }}
+        docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/proxy:${{ needs.validate-release.outputs.tag }}
+
+        # Start services with release images
+        export MANAGER_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/manager:${{ needs.validate-release.outputs.tag }}
+        export PROXY_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/proxy:${{ needs.validate-release.outputs.tag }}
+
+        docker-compose -f docker-compose.yml -f docker-compose.ci.yml up -d
+
+        # Wait for services
+        sleep 60
+
+        # Test endpoints
+        curl -f http://localhost:8000/health || exit 1
+        curl -f http://localhost:8080/healthz || exit 1
+        curl -f http://localhost:8090/metrics || exit 1
+
+        # Cleanup
+        docker-compose down -v
+
+  create-github-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [validate-release, create-release-binaries, test-release]
+
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download all binary artifacts
+      uses: actions/download-artifact@v3
+      with:
+        path: artifacts
+
+    - name: Prepare release assets
+      run: |
+        mkdir -p release-assets
+        find artifacts -name "*.tar.gz" -o -name "*.zip" | xargs -I {} cp {} release-assets/
 
         # Generate checksums
-        cd dist
-        sha256sum *.tar.gz > checksums.txt
+        cd release-assets
+        sha256sum * > checksums.txt
 
-    - name: Generate Release Notes
-      id: release_notes
+    - name: Extract changelog for version
+      id: changelog
       run: |
-        VERSION=${GITHUB_REF#refs/tags/}
-        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+        VERSION="${{ needs.validate-release.outputs.version }}"
 
-        # Extract release notes from CHANGELOG.md
-        awk "/## $VERSION/,/## [0-9]/" CHANGELOG.md | sed '1d;$d' > release_notes.md
+        # Create release notes
+        echo "## Docker Images" > release-notes.md
+        echo "- Manager: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/manager:${{ needs.validate-release.outputs.tag }}\`" >> release-notes.md
+        echo "- Proxy: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/proxy:${{ needs.validate-release.outputs.tag }}\`" >> release-notes.md
+        echo "" >> release-notes.md
+        echo "## Installation" >> release-notes.md
+        echo "\`\`\`bash" >> release-notes.md
+        echo "# Using Docker Compose" >> release-notes.md
+        echo "export MANAGER_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/manager:${{ needs.validate-release.outputs.tag }}" >> release-notes.md
+        echo "export PROXY_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/proxy:${{ needs.validate-release.outputs.tag }}" >> release-notes.md
+        echo "docker-compose up -d" >> release-notes.md
+        echo "\`\`\`" >> release-notes.md
 
-    - name: Create Release
+    - name: Create GitHub Release
       uses: softprops/action-gh-release@v1
       with:
-        body_path: release_notes.md
-        files: |
-          dist/*.tar.gz
-          dist/checksums.txt
+        tag_name: ${{ needs.validate-release.outputs.tag }}
+        name: Release ${{ needs.validate-release.outputs.tag }}
+        body_path: release-notes.md
+        files: release-assets/*
         draft: false
-        prerelease: ${{ contains(github.ref, 'rc') || contains(github.ref, 'beta') || contains(github.ref, 'alpha') }}
-
-  publish-helm-chart:
-    name: Publish Helm Chart
-    runs-on: ubuntu-latest
-    needs: build-and-push
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Configure Git
-      run: |
-        git config user.name "$GITHUB_ACTOR"
-        git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
-
-    - name: Install Helm
-      uses: azure/setup-helm@v3
-
-    - name: Package Helm chart
-      run: |
-        cd helm
-        helm package marchproxy
-        helm repo index . --url https://charts.marchproxy.io
-
-    - name: Publish to GitHub Pages
-      run: |
-        git checkout gh-pages || git checkout -b gh-pages
-        cp helm/*.tgz .
-        cp helm/index.yaml .
-        git add *.tgz index.yaml
-        git commit -m "Update Helm chart for ${{ github.ref_name }}"
-        git push origin gh-pages
-
-  update-docs:
-    name: Update Documentation
-    runs-on: ubuntu-latest
-    needs: create-release
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-
-    - name: Install mkdocs
-      run: |
-        pip install mkdocs mkdocs-material mkdocs-mermaid2-plugin
-
-    - name: Build documentation
-      run: |
-        mkdocs build
-
-    - name: Deploy to GitHub Pages
-      uses: peaceiris/actions-gh-pages@v3
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./site
-        destination_dir: docs
+        prerelease: ${{ contains(needs.validate-release.outputs.tag, '-') }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,280 @@
+{{extend 'layout.html'}}
+
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="d-flex align-items-center mb-4">
+                <a href="{{=URL('services/view', service['id'])}}" class="btn btn-outline-secondary me-3">
+                    <i class="fas fa-arrow-left"></i>
+                </a>
+                <h2><i class="fas fa-edit"></i> {{=title}}</h2>
+            </div>
+
+            <div class="card">
+                <div class="card-body">
+                    {{if form.errors:}}
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <strong>Error:</strong>
+                        {{if form.errors.get('_general'):}}
+                        {{=form.errors['_general']}}
+                        {{else:}}
+                        Please correct the errors below.
+                        {{pass}}
+                    </div>
+                    {{pass}}
+
+                    {{=form}}
+
+                    <!-- Current Service Information -->
+                    <div class="mt-4 p-3 bg-light rounded">
+                        <h6><i class="fas fa-info-circle"></i> Current Service Information</h6>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <strong>Current Target:</strong> <code>{{=service['ip_fqdn']}}</code>
+                            </div>
+                            <div class="col-md-6">
+                                <strong>Current Collection:</strong> <span class="badge bg-secondary">{{=service['collection']}}</span>
+                            </div>
+                        </div>
+                        <div class="row mt-2">
+                            <div class="col-md-6">
+                                <strong>Current Auth Type:</strong>
+                                {{if service['auth_type'] == 'none':}}
+                                <span class="badge bg-secondary">None</span>
+                                {{elif service['auth_type'] == 'token':}}
+                                <span class="badge bg-info">Base64 Token</span>
+                                {{elif service['auth_type'] == 'jwt':}}
+                                <span class="badge bg-success">JWT</span>
+                                {{pass}}
+                            </div>
+                            <div class="col-md-6">
+                                <strong>Status:</strong>
+                                {{if service['is_active']:}}
+                                <span class="badge bg-success">Active</span>
+                                {{else:}}
+                                <span class="badge bg-danger">Inactive</span>
+                                {{pass}}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Authentication Change Warning -->
+                    <div class="mt-3 alert alert-warning">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <strong>Authentication Change Warning</strong><br>
+                        Changing the authentication type will affect how services connect to this proxy endpoint:
+                        <ul class="mb-0 mt-2">
+                            <li><strong>None → Token/JWT:</strong> Services will need to start sending authentication headers.</li>
+                            <li><strong>Token/JWT → None:</strong> Authentication headers will be ignored.</li>
+                            <li><strong>Token ↔ JWT:</strong> Credentials will be regenerated. Update all connecting services.</li>
+                        </ul>
+                    </div>
+
+                    <!-- Available Clusters -->
+                    {{if clusters:}}
+                    <div class="mt-3 p-3 bg-info bg-opacity-10 rounded">
+                        <h6><i class="fas fa-server"></i> Available Clusters</h6>
+                        <div class="row">
+                            {{for cluster in clusters:}}
+                            <div class="col-md-6 mb-2">
+                                <div class="d-flex align-items-center">
+                                    <span class="badge {{='bg-primary' if cluster.id == service['cluster_id'] else 'bg-secondary'}} me-2">
+                                        {{=cluster.name}}
+                                    </span>
+                                    {{if cluster.id == service['cluster_id']:}}
+                                    <small class="text-success">Current</small>
+                                    {{elif cluster.description:}}
+                                    <small class="text-muted">{{=cluster.description}}</small>
+                                    {{pass}}
+                                </div>
+                            </div>
+                            {{pass}}
+                        </div>
+                    </div>
+                    {{pass}}
+                </div>
+            </div>
+
+            <!-- Danger Zone -->
+            <div class="card mt-4 border-danger">
+                <div class="card-header bg-danger text-white">
+                    <h6 class="mb-0"><i class="fas fa-exclamation-triangle"></i> Danger Zone</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-8">
+                            <h6>Delete Service</h6>
+                            <p class="text-muted mb-0">
+                                Permanently delete this service. This action cannot be undone and will immediately
+                                stop all traffic routing to this service.
+                            </p>
+                        </div>
+                        <div class="col-md-4 d-flex align-items-center">
+                            <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#deleteModal">
+                                <i class="fas fa-trash"></i> Delete Service
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Delete Service</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the service <strong>{{=service['name']}}</strong>?</p>
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <strong>Warning:</strong> This action cannot be undone. All traffic routing to this service will be immediately stopped.
+                </div>
+                <p>Type the service name <strong>{{=service['name']}}</strong> to confirm:</p>
+                <input type="text" class="form-control" id="confirmServiceName" placeholder="Service name">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteBtn" disabled onclick="confirmDelete()">
+                    Delete Service
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Enhanced form styling for py4web forms
+    const formElements = document.querySelectorAll('input, select, textarea');
+    formElements.forEach(element => {
+        if (!element.classList.contains('btn')) {
+            element.classList.add('form-control');
+        }
+    });
+
+    // Style buttons
+    const buttons = document.querySelectorAll('input[type="submit"]');
+    buttons.forEach(button => {
+        button.classList.add('btn', 'btn-primary');
+        button.innerHTML = '<i class="fas fa-save"></i> Update Service';
+    });
+
+    // Add form groups
+    const labels = document.querySelectorAll('label');
+    labels.forEach(label => {
+        const input = document.querySelector(`#${label.getAttribute('for')}`);
+        if (input) {
+            const wrapper = document.createElement('div');
+            wrapper.classList.add('mb-3');
+            input.parentNode.insertBefore(wrapper, input);
+            wrapper.appendChild(label);
+            wrapper.appendChild(input);
+
+            // Add comment as help text
+            const comment = input.getAttribute('comment') || input.getAttribute('data-comment');
+            if (comment) {
+                const helpText = document.createElement('div');
+                helpText.classList.add('form-text');
+                helpText.textContent = comment;
+                wrapper.appendChild(helpText);
+            }
+        }
+        label.classList.add('form-label');
+    });
+
+    // Authentication type change warning
+    const authTypeSelect = document.querySelector('select[name="auth_type"]');
+    const originalAuthType = '{{=service["auth_type"]}}';
+
+    if (authTypeSelect) {
+        authTypeSelect.addEventListener('change', function() {
+            const helpDiv = document.querySelector('#auth-change-help');
+            if (helpDiv) helpDiv.remove();
+
+            if (this.value !== originalAuthType) {
+                const help = document.createElement('div');
+                help.id = 'auth-change-help';
+                help.classList.add('alert', 'alert-warning', 'mt-2');
+
+                let message = '<i class="fas fa-exclamation-triangle"></i> <strong>Authentication Type Change</strong><br>';
+
+                if (originalAuthType === 'none' && this.value !== 'none') {
+                    message += 'Services will need to start sending authentication headers.';
+                } else if (originalAuthType !== 'none' && this.value === 'none') {
+                    message += 'Authentication headers will be ignored.';
+                } else if (originalAuthType !== this.value) {
+                    message += 'New credentials will be generated. Update all connecting services.';
+                }
+
+                help.innerHTML = message;
+                this.parentNode.appendChild(help);
+            }
+        });
+    }
+
+    // Delete confirmation logic
+    const confirmInput = document.getElementById('confirmServiceName');
+    const confirmBtn = document.getElementById('confirmDeleteBtn');
+    const serviceName = '{{=service["name"]}}';
+
+    if (confirmInput && confirmBtn) {
+        confirmInput.addEventListener('input', function() {
+            confirmBtn.disabled = this.value !== serviceName;
+        });
+    }
+});
+
+function confirmDelete() {
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '{{=URL("services/delete", service["id"])}}';
+    document.body.appendChild(form);
+    form.submit();
+}
+</script>
+
+<style>
+.card {
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    border: 1px solid rgba(0, 0, 0, 0.125);
+}
+
+.form-label {
+    font-weight: 600;
+    color: #495057;
+}
+
+.form-control:focus {
+    border-color: #86b7fe;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+.alert {
+    border: none;
+    border-radius: 0.5rem;
+}
+
+.badge {
+    font-size: 0.75em;
+}
+
+.bg-opacity-10 {
+    background-color: rgba(13, 110, 253, 0.1) !important;
+}
+
+code {
+    color: #e83e8c;
+    font-size: 0.875em;
+}
+
+.border-danger {
+    border-color: #dc3545 !important;
+}
+</style>

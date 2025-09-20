@@ -1,0 +1,285 @@
+# Docker Compose configuration for testing
+# Use with: docker-compose -f docker-compose.test.yml up
+
+version: '3.8'
+
+services:
+  # PostgreSQL Database for testing
+  postgres-test:
+    image: postgres:15-alpine
+    container_name: marchproxy-postgres-test
+    environment:
+      POSTGRES_DB: marchproxy_test
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test123
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    networks:
+      - test-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d marchproxy_test"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Redis Cache for testing
+  redis-test:
+    image: redis:7-alpine
+    container_name: marchproxy-redis-test
+    command: redis-server --appendonly yes --requirepass test123
+    volumes:
+      - redis_test_data:/data
+    ports:
+      - "6380:6379"
+    networks:
+      - test-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "test123", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # MarchProxy Manager for testing
+  manager-test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: manager
+    container_name: marchproxy-manager-test
+    environment:
+      # Application settings
+      - DATABASE_URL=postgresql://test:test123@postgres-test:5432/marchproxy_test
+      - REDIS_URL=redis://:test123@redis-test:6379/0
+      - SECRET_KEY=test-secret-key-123
+      - DEBUG=true
+      - LOG_LEVEL=debug
+      - MARCHPROXY_ENV=test
+
+      # Database fallback configuration
+      - DB_HOST=postgres-test
+      - DB_PORT=5432
+      - DB_NAME=marchproxy_test
+      - DB_USERNAME=test
+      - DB_PASSWORD=test123
+      - DB_SSL_MODE=disable
+      - DB_POOL_SIZE=5
+      - DB_MAX_OVERFLOW=5
+
+      # SMTP test configuration
+      - SMTP_HOST=localhost
+      - SMTP_PORT=1025
+      - SMTP_USERNAME=
+      - SMTP_PASSWORD=
+      - SMTP_FROM=test@marchproxy.local
+      - SMTP_USE_TLS=false
+      - SMTP_USE_SSL=false
+
+      # Redis fallback configuration
+      - REDIS_HOST=redis-test
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=test123
+      - REDIS_DATABASE=0
+      - REDIS_SSL=false
+      - REDIS_POOL_SIZE=5
+
+      # License configuration for testing
+      - LICENSE_KEY=
+      - LICENSE_SERVER_URL=http://localhost:8888
+      - LICENSE_CHECK_INTERVAL=1
+      - LICENSE_OFFLINE_GRACE=1
+
+      # Test monitoring configuration
+      - ALERT_EMAIL_DEFAULT=test@example.com
+      - METRICS_RETENTION_DAYS=1
+      - LOGS_RETENTION_DAYS=1
+    ports:
+      - "8001:8000"
+    networks:
+      - test-network
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # MarchProxy Proxy for testing
+  proxy-test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: proxy
+    container_name: marchproxy-proxy-test
+    environment:
+      # Manager connection
+      - MANAGER_URL=http://manager-test:8000
+      - MANAGER_HOST=manager-test
+      - MANAGER_PORT=8000
+      - CLUSTER_API_KEY=test-api-key-123
+
+      # Proxy configuration
+      - PROXY_ID=proxy-test-1
+      - CLUSTER_ID=test-cluster
+      - LOG_LEVEL=debug
+
+      # Database and cache
+      - REDIS_URL=redis://:test123@redis-test:6379/1
+
+      # Monitoring and tracing
+      - METRICS_ENABLED=true
+      - METRICS_PORT=8091
+      - HEALTH_PORT=8081
+      - TRACING_ENABLED=false
+
+      # Network acceleration (disabled for testing)
+      - ENABLE_XDP=false
+      - ENABLE_EBPF=false
+      - ENABLE_DPDK=false
+      - ENABLE_AF_XDP=false
+      - ENABLE_SR_IOV=false
+    ports:
+      - "8081:8081"   # Health API
+      - "8091:8091"   # Metrics
+    networks:
+      - test-network
+    depends_on:
+      manager-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "./marchproxy-health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # MailHog for SMTP testing
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: marchproxy-mailhog-test
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # Web UI
+    networks:
+      - test-network
+
+  # Mock license server for testing
+  license-mock:
+    image: nginx:alpine
+    container_name: marchproxy-license-mock
+    volumes:
+      - ./test/fixtures/license-responses:/usr/share/nginx/html:ro
+      - ./test/fixtures/nginx-license.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "8888:80"
+    networks:
+      - test-network
+
+  # Test runner container
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: testing
+    container_name: marchproxy-test-runner
+    environment:
+      - DATABASE_URL=postgresql://test:test123@postgres-test:5432/marchproxy_test
+      - REDIS_URL=redis://:test123@redis-test:6379/0
+      - MANAGER_URL=http://manager-test:8000
+      - PROXY_URL=http://proxy-test:8081
+      - TEST_ENV=true
+    volumes:
+      - ./test:/app/test:ro
+      - test_results:/app/results
+    networks:
+      - test-network
+    depends_on:
+      manager-test:
+        condition: service_healthy
+      proxy-test:
+        condition: service_healthy
+    profiles:
+      - test
+
+  # Integration test container
+  integration-test:
+    image: python:3.11-slim
+    container_name: marchproxy-integration-test
+    working_dir: /app
+    environment:
+      - MANAGER_URL=http://manager-test:8000
+      - PROXY_URL=http://proxy-test:8081
+      - DATABASE_URL=postgresql://test:test123@postgres-test:5432/marchproxy_test
+      - REDIS_URL=redis://:test123@redis-test:6379/0
+    volumes:
+      - ./test/integration:/app:ro
+      - integration_results:/app/results
+    networks:
+      - test-network
+    depends_on:
+      manager-test:
+        condition: service_healthy
+      proxy-test:
+        condition: service_healthy
+    command: |
+      sh -c "
+        pip install requests pytest python-dotenv &&
+        python -m pytest -v --tb=short
+      "
+    profiles:
+      - integration
+
+  # Load test container
+  load-test:
+    image: golang:1.21-alpine
+    container_name: marchproxy-load-test
+    working_dir: /app
+    environment:
+      - MANAGER_URL=http://manager-test:8000
+      - PROXY_URL=http://proxy-test:8081
+    volumes:
+      - ./test/load:/app:ro
+      - load_results:/app/results
+    networks:
+      - test-network
+    depends_on:
+      manager-test:
+        condition: service_healthy
+      proxy-test:
+        condition: service_healthy
+    command: |
+      sh -c "
+        apk add --no-cache curl &&
+        go mod download &&
+        go test -v -bench=. -benchmem ./...
+      "
+    profiles:
+      - load
+
+networks:
+  test-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16
+
+volumes:
+  postgres_test_data:
+    driver: local
+  redis_test_data:
+    driver: local
+  test_results:
+    driver: local
+  integration_results:
+    driver: local
+  load_results:
+    driver: local

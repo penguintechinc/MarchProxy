@@ -1,0 +1,276 @@
+# MarchProxy Alerting Rules
+# Pre-configured alerts for common scenarios (DISABLED by default)
+# To enable: remove the comment from the 'alert:' lines
+
+groups:
+  - name: marchproxy.rules
+    interval: 30s
+    rules:
+      # === Manager Application Alerts ===
+
+      # Manager Down
+      - # alert: MarchProxyManagerDown
+        expr: up{job="marchproxy-manager"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: marchproxy-manager
+          component: manager
+        annotations:
+          summary: "MarchProxy Manager is down"
+          description: "MarchProxy Manager has been down for more than 1 minute"
+          runbook_url: "https://docs.marchproxy.io/troubleshooting/manager-down"
+
+      # High Response Time
+      - # alert: MarchProxyManagerHighResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="marchproxy-manager"}[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+          service: marchproxy-manager
+          component: manager
+        annotations:
+          summary: "MarchProxy Manager high response time"
+          description: "95th percentile response time is {{ $value }}s for 5 minutes"
+
+      # High Error Rate
+      - # alert: MarchProxyManagerHighErrorRate
+        expr: rate(http_requests_total{job="marchproxy-manager",status=~"5.."}[5m]) / rate(http_requests_total{job="marchproxy-manager"}[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: marchproxy-manager
+          component: manager
+        annotations:
+          summary: "MarchProxy Manager high error rate"
+          description: "Error rate is {{ $value | humanizePercentage }} for 5 minutes"
+
+      # Database Connection Issues
+      - # alert: MarchProxyDatabaseConnectionFailed
+        expr: marchproxy_database_connections_active{job="marchproxy-manager"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: marchproxy-manager
+          component: database
+        annotations:
+          summary: "MarchProxy database connection failed"
+          description: "No active database connections for 2 minutes"
+
+      # License Validation Failures
+      - # alert: MarchProxyLicenseValidationFailed
+        expr: increase(marchproxy_license_validation_failures_total{job="marchproxy-manager"}[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+          service: marchproxy-manager
+          component: licensing
+        annotations:
+          summary: "MarchProxy license validation failures"
+          description: "License validation failures detected"
+
+      # === Proxy Application Alerts ===
+
+      # Proxy Down
+      - # alert: MarchProxyProxyDown
+        expr: up{job="marchproxy-proxy"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: marchproxy-proxy
+          component: proxy
+        annotations:
+          summary: "MarchProxy Proxy is down"
+          description: "MarchProxy Proxy {{ $labels.instance }} has been down for more than 1 minute"
+
+      # High Connection Count
+      - # alert: MarchProxyHighConnectionCount
+        expr: marchproxy_active_connections{job="marchproxy-proxy"} > 1000
+        for: 5m
+        labels:
+          severity: warning
+          service: marchproxy-proxy
+          component: proxy
+        annotations:
+          summary: "MarchProxy high connection count"
+          description: "Active connections: {{ $value }} on {{ $labels.instance }}"
+
+      # High Network Latency
+      - # alert: MarchProxyHighNetworkLatency
+        expr: histogram_quantile(0.95, rate(marchproxy_request_duration_seconds_bucket{job="marchproxy-proxy"}[5m])) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          service: marchproxy-proxy
+          component: proxy
+        annotations:
+          summary: "MarchProxy high network latency"
+          description: "95th percentile latency: {{ $value }}s on {{ $labels.instance }}"
+
+      # Authentication Failures
+      - # alert: MarchProxyAuthenticationFailures
+        expr: rate(marchproxy_authentication_failures_total{job="marchproxy-proxy"}[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          service: marchproxy-proxy
+          component: auth
+        annotations:
+          summary: "MarchProxy authentication failures"
+          description: "High authentication failure rate: {{ $value }}/s on {{ $labels.instance }}"
+
+      # === Infrastructure Alerts ===
+
+      # PostgreSQL Down
+      - # alert: PostgreSQLDown
+        expr: up{job="postgres"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: postgres
+          component: database
+        annotations:
+          summary: "PostgreSQL is down"
+          description: "PostgreSQL database has been down for more than 1 minute"
+
+      # Redis Down
+      - # alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: warning
+          service: redis
+          component: cache
+        annotations:
+          summary: "Redis is down"
+          description: "Redis cache has been down for more than 1 minute"
+
+      # High CPU Usage
+      - # alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          service: system
+          component: cpu
+        annotations:
+          summary: "High CPU usage"
+          description: "CPU usage is {{ $value }}% on {{ $labels.instance }}"
+
+      # High Memory Usage
+      - # alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+          service: system
+          component: memory
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value }}% on {{ $labels.instance }}"
+
+      # Disk Space Low
+      - # alert: DiskSpaceLow
+        expr: (1 - (node_filesystem_avail_bytes / node_filesystem_size_bytes)) * 100 > 90
+        for: 2m
+        labels:
+          severity: warning
+          service: system
+          component: disk
+        annotations:
+          summary: "Disk space low"
+          description: "Disk usage is {{ $value }}% on {{ $labels.instance }}"
+
+      # === Performance Alerts ===
+
+      # High Request Rate
+      - # alert: MarchProxyHighRequestRate
+        expr: rate(marchproxy_requests_total{job="marchproxy-proxy"}[5m]) > 1000
+        for: 5m
+        labels:
+          severity: info
+          service: marchproxy-proxy
+          component: performance
+        annotations:
+          summary: "MarchProxy high request rate"
+          description: "Request rate: {{ $value }}/s on {{ $labels.instance }}"
+
+      # eBPF Program Issues
+      - # alert: MarchProxyEBPFProgramFailed
+        expr: marchproxy_ebpf_program_loaded{job="marchproxy-proxy"} == 0
+        for: 1m
+        labels:
+          severity: warning
+          service: marchproxy-proxy
+          component: ebpf
+        annotations:
+          summary: "MarchProxy eBPF program failed"
+          description: "eBPF program failed to load on {{ $labels.instance }}"
+
+      # XDP Acceleration Issues
+      - # alert: MarchProxyXDPAccelerationFailed
+        expr: marchproxy_xdp_acceleration_enabled{job="marchproxy-proxy"} == 0
+        for: 1m
+        labels:
+          severity: info
+          service: marchproxy-proxy
+          component: acceleration
+        annotations:
+          summary: "MarchProxy XDP acceleration disabled"
+          description: "XDP acceleration is disabled on {{ $labels.instance }}"
+
+      # === Certificate Alerts ===
+
+      # Certificate Expiring Soon
+      - # alert: CertificateExpiringSoon
+        expr: (marchproxy_certificate_expiry_timestamp - time()) / 86400 < 30
+        for: 1h
+        labels:
+          severity: warning
+          service: marchproxy-manager
+          component: certificates
+        annotations:
+          summary: "Certificate expiring soon"
+          description: "Certificate {{ $labels.cert_name }} expires in {{ $value }} days"
+
+      # Certificate Expired
+      - # alert: CertificateExpired
+        expr: marchproxy_certificate_expiry_timestamp - time() <= 0
+        for: 1m
+        labels:
+          severity: critical
+          service: marchproxy-manager
+          component: certificates
+        annotations:
+          summary: "Certificate expired"
+          description: "Certificate {{ $labels.cert_name }} has expired"
+
+      # === Health Check Alerts ===
+
+      # Health Check Failed
+      - # alert: HealthCheckFailed
+        expr: probe_success{job="blackbox-health"} == 0
+        for: 3m
+        labels:
+          severity: critical
+          service: health-check
+          component: monitoring
+        annotations:
+          summary: "Health check failed"
+          description: "Health check failed for {{ $labels.instance }}"
+
+  # Recording rules for performance optimization
+  - name: marchproxy.recording
+    interval: 30s
+    rules:
+      - record: marchproxy:request_rate_5m
+        expr: rate(marchproxy_requests_total[5m])
+
+      - record: marchproxy:error_rate_5m
+        expr: rate(marchproxy_request_errors_total[5m]) / rate(marchproxy_requests_total[5m])
+
+      - record: marchproxy:response_time_95p_5m
+        expr: histogram_quantile(0.95, rate(marchproxy_request_duration_seconds_bucket[5m]))
+
+      - record: marchproxy:active_connections_avg_5m
+        expr: avg_over_time(marchproxy_active_connections[5m])

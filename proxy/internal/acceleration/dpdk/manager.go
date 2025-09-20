@@ -1,3 +1,5 @@
+// +build dpdk
+
 package dpdk
 
 import (

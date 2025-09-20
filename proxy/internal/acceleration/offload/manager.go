@@ -4,7 +4,6 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"fmt"
-	"hash"
 	"hash/crc32"
 	"net"
 	"sync"

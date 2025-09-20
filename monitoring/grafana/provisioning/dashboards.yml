@@ -1,0 +1,53 @@
+# Grafana Dashboard Provisioning for MarchProxy
+# Auto-loads all MarchProxy dashboards
+
+apiVersion: 1
+
+providers:
+  # MarchProxy Core Dashboards
+  - name: 'marchproxy-core'
+    orgId: 1
+    folder: 'MarchProxy'
+    type: file
+    disableDeletion: false
+    editable: true
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/core
+
+  # Infrastructure Dashboards
+  - name: 'marchproxy-infrastructure'
+    orgId: 1
+    folder: 'Infrastructure'
+    type: file
+    disableDeletion: false
+    editable: true
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/infrastructure
+
+  # Performance Dashboards
+  - name: 'marchproxy-performance'
+    orgId: 1
+    folder: 'Performance'
+    type: file
+    disableDeletion: false
+    editable: true
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/performance
+
+  # Security Dashboards
+  - name: 'marchproxy-security'
+    orgId: 1
+    folder: 'Security'
+    type: file
+    disableDeletion: false
+    editable: true
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/security

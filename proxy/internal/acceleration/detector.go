@@ -1,7 +1,6 @@
 package acceleration
 
 import (
-	"bufio"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -18,6 +17,15 @@ type AccelerationCapability struct {
 	Reason        string
 	Performance   string // Expected performance tier
 	Prerequisites []string
+}
+
+// HardwareCapabilities represents overall hardware capabilities
+type HardwareCapabilities struct {
+	DPDK   AccelerationCapability
+	XDP    AccelerationCapability
+	AFXDP  AccelerationCapability
+	SRIOV  AccelerationCapability
+	NUMA   AccelerationCapability
 }
 
 // NetworkInterface represents a network interface and its capabilities
@@ -485,7 +493,7 @@ func (hd *HardwareDetector) printResults() {
 
 	// Acceleration Technologies
 	fmt.Println("\nAcceleration Technologies:")
-	for techName, cap := range hd.capabilities {
+	for _, cap := range hd.capabilities {
 		fmt.Printf("\n  %s:\n", cap.Technology)
 		fmt.Printf("    Available: %v\n", cap.Available)
 		fmt.Printf("    Performance: %s\n", cap.Performance)
@@ -579,4 +587,33 @@ func (hd *HardwareDetector) GetCapabilities() map[string]*AccelerationCapability
 // GetInterfaces returns all detected network interfaces
 func (hd *HardwareDetector) GetInterfaces() map[string]*NetworkInterface {
 	return hd.interfaces
+}
+
+// DetectCapabilities detects and returns hardware capabilities
+func (hd *HardwareDetector) DetectCapabilities() (*HardwareCapabilities, error) {
+	// Detect all capabilities
+	if err := hd.Detect(); err != nil {
+		return nil, err
+	}
+
+	// Convert to HardwareCapabilities struct
+	caps := &HardwareCapabilities{}
+
+	if dpdk, exists := hd.capabilities["DPDK"]; exists {
+		caps.DPDK = *dpdk
+	}
+	if xdp, exists := hd.capabilities["XDP"]; exists {
+		caps.XDP = *xdp
+	}
+	if afxdp, exists := hd.capabilities["AF_XDP"]; exists {
+		caps.AFXDP = *afxdp
+	}
+	if sriov, exists := hd.capabilities["SR-IOV"]; exists {
+		caps.SRIOV = *sriov
+	}
+	if numa, exists := hd.capabilities["NUMA"]; exists {
+		caps.NUMA = *numa
+	}
+
+	return caps, nil
 }

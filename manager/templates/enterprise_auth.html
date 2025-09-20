@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enterprise Authentication - MarchProxy</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .auth-container {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .auth-card {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
+            padding: 40px;
+            min-width: 400px;
+            max-width: 500px;
+        }
+        .auth-provider {
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
+            text-decoration: none;
+            color: inherit;
+            display: block;
+            transition: all 0.3s ease;
+        }
+        .auth-provider:hover {
+            border-color: #007bff;
+            background-color: #f8f9fa;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 123, 255, 0.2);
+            color: inherit;
+            text-decoration: none;
+        }
+        .provider-icon {
+            font-size: 24px;
+            width: 40px;
+            text-align: center;
+            margin-right: 15px;
+        }
+        .provider-name {
+            font-weight: 600;
+            font-size: 16px;
+        }
+        .license-info {
+            background-color: #e3f2fd;
+            border: 1px solid #bbdefb;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 25px;
+        }
+        .license-info .badge {
+            font-size: 12px;
+        }
+        .logo {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .logo h1 {
+            color: #495057;
+            font-weight: 300;
+            margin-bottom: 5px;
+        }
+        .logo p {
+            color: #6c757d;
+            margin: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="auth-container">
+        <div class="auth-card">
+            <div class="logo">
+                <h1><i class="fas fa-shield-alt"></i> MarchProxy</h1>
+                <p>Enterprise Authentication</p>
+            </div>
+
+            <!-- License Information -->
+            <div class="license-info">
+                <div class="d-flex justify-content-between align-items-center">
+                    <span><i class="fas fa-certificate text-primary"></i> <strong>Enterprise Edition</strong></span>
+                    <span class="badge bg-success">Active</span>
+                </div>
+                <small class="text-muted">
+                    License: {{=license_info.get('license_key', 'N/A')[:8]}}...
+                    <br>
+                    Expires: {{=license_info.get('expires', 'N/A')}}
+                </small>
+            </div>
+
+            <!-- Authentication Providers -->
+            <div class="providers">
+                <h5 class="mb-3">Choose your authentication method:</h5>
+
+                {{if not providers:}}
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    No enterprise authentication providers are configured.
+                    <br><small>Contact your administrator to configure SAML or OAuth2 providers.</small>
+                </div>
+                {{else:}}
+
+                {{for provider in providers:}}
+                <a href="{{=provider['url']}}" class="auth-provider">
+                    <div class="d-flex align-items-center">
+                        <div class="provider-icon">
+                            <i class="{{=provider['icon']}}"></i>
+                        </div>
+                        <div class="flex-grow-1">
+                            <div class="provider-name">{{=provider['name']}}</div>
+                            <small class="text-muted">
+                                {{if provider['type'] == 'saml':}}
+                                Single Sign-On via SAML Identity Provider
+                                {{elif provider['type'] == 'oauth2':}}
+                                Sign in with {{=provider['name']}}
+                                {{else:}}
+                                Enterprise Authentication
+                                {{pass}}
+                            </small>
+                        </div>
+                        <div>
+                            <i class="fas fa-arrow-right text-muted"></i>
+                        </div>
+                    </div>
+                </a>
+                {{pass}}
+
+                {{pass}}
+            </div>
+
+            <!-- Alternative Login Options -->
+            <div class="mt-4 text-center">
+                <hr>
+                <p class="text-muted mb-2">Alternative login options:</p>
+                <a href="/auth/login" class="btn btn-outline-secondary btn-sm">
+                    <i class="fas fa-user"></i> Local Account Login
+                </a>
+            </div>
+
+            <!-- Help Text -->
+            <div class="mt-4">
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i>
+                    <strong>Need help?</strong>
+                    <br><small>
+                        Contact your administrator if you cannot access your account or need assistance
+                        with enterprise authentication.
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

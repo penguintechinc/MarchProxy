@@ -1,0 +1,44 @@
+# MarchProxy Elasticsearch Configuration
+# Pre-configured for log aggregation
+
+cluster.name: "marchproxy-logs"
+node.name: "elasticsearch-1"
+network.host: 0.0.0.0
+http.port: 9200
+
+# Path configuration
+path.data: /usr/share/elasticsearch/data
+path.logs: /usr/share/elasticsearch/logs
+
+# Memory settings
+bootstrap.memory_lock: false
+
+# Discovery configuration for single-node setup
+discovery.type: single-node
+
+# Security configuration (disabled for development)
+xpack.security.enabled: false
+xpack.license.self_generated.type: basic
+
+# Index management
+action.auto_create_index: true
+action.destructive_requires_name: true
+
+# Performance tuning for MarchProxy logs
+indices.memory.index_buffer_size: 30%
+indices.memory.min_index_buffer_size: 96mb
+
+# Index lifecycle management
+xpack.ilm.enabled: true
+
+# Monitoring
+xpack.monitoring.collection.enabled: false
+
+# Template for MarchProxy logs
+index.number_of_shards: 1
+index.number_of_replicas: 0
+index.refresh_interval: 5s
+
+# Logging levels
+logger.org.elasticsearch.discovery: WARN
+logger.org.elasticsearch.cluster.service: WARN

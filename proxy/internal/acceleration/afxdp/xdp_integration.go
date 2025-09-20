@@ -29,14 +29,16 @@ type XDPAFXDPBridge struct {
 
 // BridgeConfig holds configuration for XDP-AF_XDP bridge
 type BridgeConfig struct {
-	InterfaceName     string
-	NumQueues         int
-	AFXDPFrameSize    uint32
-	AFXDPFrameCount   uint32
-	AFXDPBatchSize    int
-	ZeroCopy          bool
-	SlowPathThreshold float64 // Percentage of packets to route to slow path
-	StatsInterval     time.Duration
+	InterfaceName       string
+	NumQueues           int
+	AFXDPFrameSize      uint32
+	AFXDPFrameCount     uint32
+	AFXDPBatchSize      int
+	ZeroCopy            bool
+	SlowPathThreshold   float64 // Percentage of packets to route to slow path
+	StatsInterval       time.Duration
+	EnableEnhancedProcessor bool
+	ProcessorConfig     *ProcessorConfig
 }
 
 // BridgeStats holds statistics for the bridge
@@ -72,22 +74,30 @@ type SlowPathPacket struct {
 func NewXDPAFXDPBridge(config *BridgeConfig) *XDPAFXDPBridge {
 	if config == nil {
 		config = &BridgeConfig{
-			NumQueues:         4,
-			AFXDPFrameSize:    2048,
-			AFXDPFrameCount:   4096,
-			AFXDPBatchSize:    64,
-			ZeroCopy:          true,
-			SlowPathThreshold: 20.0,
-			StatsInterval:     time.Second * 5,
+			NumQueues:               4,
+			AFXDPFrameSize:          2048,
+			AFXDPFrameCount:         4096,
+			AFXDPBatchSize:          64,
+			ZeroCopy:                true,
+			SlowPathThreshold:       20.0,
+			StatsInterval:           time.Second * 5,
+			EnableEnhancedProcessor: true,
 		}
 	}
 
-	return &XDPAFXDPBridge{
+	bridge := &XDPAFXDPBridge{
 		interfaceName: config.InterfaceName,
 		numQueues:     config.NumQueues,
 		config:        config,
 		stats:         &BridgeStats{LastUpdate: time.Now()},
 	}
+
+	// Initialize enhanced processor if enabled
+	if config.EnableEnhancedProcessor {
+		bridge.enhancedProcessor = NewEnhancedAFXDPProcessor(config.ProcessorConfig)
+	}
+
+	return bridge
 }
 
 // Initialize sets up XDP, AF_XDP sockets, and Go proxy integration
@@ -182,6 +192,32 @@ func (bridge *XDPAFXDPBridge) Start() error {
 func (bridge *XDPAFXDPBridge) handleSlowPathPacket(packet *XDPPacket, queueID int) bool {
 	startTime := time.Now()
 
+	// Use enhanced processor if available
+	if bridge.enhancedProcessor != nil {
+		decision := bridge.enhancedProcessor.ProcessPacket(packet)
+
+		switch decision.Action {
+		case ActionPass:
+			// Packet can be passed through without Go proxy
+			atomic.AddUint64(&bridge.stats.FastPathPackets, 1)
+			return true
+
+		case ActionDrop:
+			// Packet should be dropped
+			atomic.AddUint64(&bridge.stats.DroppedPackets, 1)
+			return false
+
+		case ActionRedirectGo:
+			// Packet needs Go proxy processing - continue with original logic
+			break
+
+		case ActionRateLimit:
+			// Rate limited
+			atomic.AddUint64(&bridge.stats.DroppedPackets, 1)
+			return false
+		}
+	}
+
 	// Parse packet to determine processing requirements
 	slowPacket, err := bridge.parseSlowPathPacket(packet, queueID)
 	if err != nil {
@@ -196,9 +232,9 @@ func (bridge *XDPAFXDPBridge) handleSlowPathPacket(packet *XDPPacket, queueID in
 	// Route to appropriate Go proxy handler
 	success := bridge.routeToGoProxy(slowPacket)
 
-	// Update processing time
+	// Update processing time (simplified approach)
 	processingTime := time.Since(startTime)
-	atomic.AddUint64((*uint64)(&bridge.stats.ProcessingTime), uint64(processingTime))
+	bridge.stats.ProcessingTime = processingTime
 
 	return success
 }
@@ -455,13 +491,7 @@ func (bridge *XDPAFXDPBridge) IsRunning() bool {
 	return bridge.running
 }
 
-// Helper functions
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
+// Helper functions moved to enhanced_processor.go to avoid duplication
 
 func containsIgnoreCase(s, substr string) bool {
 	// Simple case-insensitive search

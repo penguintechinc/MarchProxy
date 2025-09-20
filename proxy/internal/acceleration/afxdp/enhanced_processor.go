@@ -158,7 +158,7 @@ func (p *EnhancedAFXDPProcessor) ProcessPacket(packet *XDPPacket) PacketDecision
 	startTime := time.Now()
 	defer func() {
 		processingTime := time.Since(startTime)
-		atomic.AddUint64((*uint64)(&p.stats.AvgProcessingTime), uint64(processingTime))
+		p.stats.AvgProcessingTime = processingTime
 	}()
 
 	// Parse packet headers

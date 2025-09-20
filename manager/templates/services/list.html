@@ -1,0 +1,173 @@
+{{extend 'layout.html'}}
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="fas fa-network-wired"></i> Services</h2>
+                <a href="{{=URL('services/create')}}" class="btn btn-primary">
+                    <i class="fas fa-plus"></i> Create Service
+                </a>
+            </div>
+
+            <!-- Filters -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <form method="GET" class="row g-3">
+                        <div class="col-md-6">
+                            <label for="cluster_id" class="form-label">Filter by Cluster</label>
+                            <select name="cluster_id" id="cluster_id" class="form-select">
+                                <option value="">All Clusters</option>
+                                {{for cluster in clusters:}}
+                                <option value="{{=cluster.id}}" {{='selected' if current_cluster_id == cluster.id else ''}}>
+                                    {{=cluster.name}}
+                                </option>
+                                {{pass}}
+                            </select>
+                        </div>
+                        <div class="col-md-6 d-flex align-items-end">
+                            <button type="submit" class="btn btn-outline-primary me-2">
+                                <i class="fas fa-filter"></i> Filter
+                            </button>
+                            <a href="{{=URL('services')}}" class="btn btn-outline-secondary">
+                                <i class="fas fa-times"></i> Clear
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Services Table -->
+            {{if services:}}
+            <div class="card">
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Target</th>
+                                    <th>Collection</th>
+                                    <th>Cluster</th>
+                                    <th>Auth Type</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {{for service in services:}}
+                                <tr>
+                                    <td>
+                                        <strong>{{=service.name}}</strong>
+                                        {{if service.description:}}
+                                        <br><small class="text-muted">{{=service.description[:50]}}{{='...' if len(service.description) > 50 else ''}}</small>
+                                        {{pass}}
+                                    </td>
+                                    <td>
+                                        <code>{{=service.ip_fqdn}}</code>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-secondary">{{=service.collection}}</span>
+                                    </td>
+                                    <td>
+                                        {{for cluster in clusters:}}
+                                        {{if cluster.id == service.cluster_id:}}
+                                        <span class="badge bg-primary">{{=cluster.name}}</span>
+                                        {{pass}}
+                                        {{pass}}
+                                    </td>
+                                    <td>
+                                        {{if service.auth_type == 'none':}}
+                                        <span class="badge bg-secondary">None</span>
+                                        {{elif service.auth_type == 'token':}}
+                                        <span class="badge bg-info">Base64 Token</span>
+                                        {{elif service.auth_type == 'jwt':}}
+                                        <span class="badge bg-success">JWT</span>
+                                        {{pass}}
+                                    </td>
+                                    <td>
+                                        {{if service.is_active:}}
+                                        <span class="badge bg-success">Active</span>
+                                        {{else:}}
+                                        <span class="badge bg-danger">Inactive</span>
+                                        {{pass}}
+                                    </td>
+                                    <td>
+                                        <div class="btn-group" role="group">
+                                            <a href="{{=URL('services/view', service.id)}}" class="btn btn-sm btn-outline-primary">
+                                                <i class="fas fa-eye"></i>
+                                            </a>
+                                            <a href="{{=URL('services/edit', service.id)}}" class="btn btn-sm btn-outline-secondary">
+                                                <i class="fas fa-edit"></i>
+                                            </a>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {{pass}}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pagination -->
+            {{if pagination and pagination.get('total_pages', 1) > 1:}}
+            <nav aria-label="Services pagination" class="mt-4">
+                <ul class="pagination justify-content-center">
+                    {{if pagination['current_page'] > 1:}}
+                    <li class="page-item">
+                        <a class="page-link" href="{{=URL('services', vars=dict(page=pagination['current_page']-1, cluster_id=current_cluster_id))}}">
+                            <i class="fas fa-chevron-left"></i> Previous
+                        </a>
+                    </li>
+                    {{pass}}
+
+                    {{for page in range(max(1, pagination['current_page']-2), min(pagination['total_pages']+1, pagination['current_page']+3)):}}
+                    <li class="page-item {{='active' if page == pagination['current_page'] else ''}}">
+                        <a class="page-link" href="{{=URL('services', vars=dict(page=page, cluster_id=current_cluster_id))}}">{{=page}}</a>
+                    </li>
+                    {{pass}}
+
+                    {{if pagination['current_page'] < pagination['total_pages']:}}
+                    <li class="page-item">
+                        <a class="page-link" href="{{=URL('services', vars=dict(page=pagination['current_page']+1, cluster_id=current_cluster_id))}}">
+                            Next <i class="fas fa-chevron-right"></i>
+                        </a>
+                    </li>
+                    {{pass}}
+                </ul>
+            </nav>
+            {{pass}}
+
+            {{else:}}
+            <div class="card">
+                <div class="card-body text-center py-5">
+                    <i class="fas fa-network-wired fa-3x text-muted mb-3"></i>
+                    <h4>No Services Found</h4>
+                    <p class="text-muted">{{if current_cluster_id:}}No services found in the selected cluster.{{else:}}You haven't created any services yet.{{pass}}</p>
+                    <a href="{{=URL('services/create')}}" class="btn btn-primary">
+                        <i class="fas fa-plus"></i> Create Your First Service
+                    </a>
+                </div>
+            </div>
+            {{pass}}
+        </div>
+    </div>
+</div>
+
+<style>
+.table th {
+    border-top: none;
+    font-weight: 600;
+    color: #495057;
+}
+.badge {
+    font-size: 0.75em;
+}
+.btn-group .btn {
+    border-radius: 0.25rem;
+}
+.btn-group .btn:not(:last-child) {
+    margin-right: 0.25rem;
+}
+</style>

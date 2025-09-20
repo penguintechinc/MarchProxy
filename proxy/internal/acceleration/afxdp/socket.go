@@ -1,3 +1,5 @@
+// +build afxdp
+
 package afxdp
 
 import (

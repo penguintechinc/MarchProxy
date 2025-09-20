@@ -19,7 +19,6 @@ type AccelerationManager struct {
 	detectedCapabilities *HardwareCapabilities
 
 	// Technology managers
-	dpdkManager      *dpdk.DPDKManager
 	xdpManager       *xdp.XDPManager
 	sriovManager     *sriov.SRIOVManager
 	afxdpBridge      *afxdp.XDPAFXDPBridge
@@ -43,9 +42,6 @@ type AccelerationConfig struct {
 	EnabledTechnologies []AccelerationType
 	FallbackMode     FallbackMode
 	PerformanceMode  PerformanceMode
-
-	// DPDK settings
-	DPDKConfig       *dpdk.DPDKConfig
 
 	// XDP settings
 	XDPConfig        *xdp.XDPConfig
@@ -71,7 +67,6 @@ const (
 	AccelNone AccelerationType = iota
 	AccelXDP
 	AccelAFXDP
-	AccelDPDK
 	AccelSRIOV
 )
 
@@ -97,7 +92,6 @@ const (
 // AccelerationStats holds overall acceleration statistics
 type AccelerationStats struct {
 	// Technology usage
-	DPDKPackets      uint64
 	XDPPackets       uint64
 	AFXDPPackets     uint64
 	GoProxyPackets   uint64
@@ -109,7 +103,6 @@ type AccelerationStats struct {
 	PacketsPerSecond uint64
 
 	// Technology-specific stats
-	DPDKStats        *dpdk.DPDKStats
 	XDPStats         *xdp.XDPStats
 	AFXDPStats       *afxdp.BridgeStats
 	SRIOVStats       *sriov.SRIOVStats
@@ -181,8 +174,6 @@ func (am *AccelerationManager) Initialize() error {
 // initializeTechnology initializes a specific acceleration technology
 func (am *AccelerationManager) initializeTechnology(tech AccelerationType) error {
 	switch tech {
-	case AccelDPDK:
-		return am.initializeDPDK()
 	case AccelXDP:
 		return am.initializeXDP()
 	case AccelSRIOV:
@@ -195,38 +186,6 @@ func (am *AccelerationManager) initializeTechnology(tech AccelerationType) error
 	}
 }
 
-// initializeDPDK initializes DPDK acceleration
-func (am *AccelerationManager) initializeDPDK() error {
-	if !am.detectedCapabilities.DPDK.Available {
-		return fmt.Errorf("DPDK not available")
-	}
-
-	dpdkConfig := am.config.DPDKConfig
-	if dpdkConfig == nil {
-		// Use default DPDK configuration
-		dpdkConfig = &dpdk.DPDKConfig{
-			Enabled:      true,
-			DriverType:   "vfio-pci",
-			HugePages:    2048,
-			Cores:        []int{2, 3, 4, 5},
-			MemChannels:  4,
-			PCIDevices:   am.detectedCapabilities.DPDK.Devices,
-		}
-	}
-
-	manager, err := dpdk.NewDPDKManager(dpdkConfig)
-	if err != nil {
-		return fmt.Errorf("failed to create DPDK manager: %w", err)
-	}
-
-	if err := manager.Initialize(); err != nil {
-		return fmt.Errorf("failed to initialize DPDK: %w", err)
-	}
-
-	am.dpdkManager = manager
-	log.Printf("Acceleration: DPDK initialized")
-	return nil
-}
 
 // initializeXDP initializes XDP acceleration
 func (am *AccelerationManager) initializeXDP() error {
@@ -269,14 +228,18 @@ func (am *AccelerationManager) initializeSRIOV() error {
 	if sriovConfig == nil {
 		// Use default SR-IOV configuration
 		sriovConfig = &sriov.SRIOVConfig{
-			Enabled:       true,
-			VFCount:       8,
-			PFDevice:      am.config.InterfaceName,
-			VFAllocations: make(map[string]*sriov.VFAllocation),
+			EnabledPFs:        []string{am.config.InterfaceName},
+			MaxVFsPerPF:       8,
+			VLANMode:          "disabled",
+			SecurityMode:      "strict",
+			EnableSpoofCheck:  true,
+			EnableTrustMode:   false,
+			AutoConfiguration: true,
+			PCIPassthrough:    false,
 		}
 	}
 
-	manager := sriov.NewSRIOVManager(sriovConfig)
+	manager := sriov.NewSRIOVManager(true, sriovConfig)
 	if err := manager.Initialize(); err != nil {
 		return fmt.Errorf("failed to initialize SR-IOV: %w", err)
 	}
@@ -290,16 +253,24 @@ func (am *AccelerationManager) initializeSRIOV() error {
 func (am *AccelerationManager) initializeXDPAFXDPBridge() error {
 	afxdpConfig := am.config.AFXDPConfig
 	if afxdpConfig == nil {
-		// Use default AF_XDP configuration
+		// Use default AF_XDP configuration with enhanced processing
 		afxdpConfig = &afxdp.BridgeConfig{
-			InterfaceName:     am.config.InterfaceName,
-			NumQueues:         4,
-			AFXDPFrameSize:    2048,
-			AFXDPFrameCount:   4096,
-			AFXDPBatchSize:    64,
-			ZeroCopy:          true,
-			SlowPathThreshold: 20.0,
-			StatsInterval:     time.Second * 5,
+			InterfaceName:           am.config.InterfaceName,
+			NumQueues:               4,
+			AFXDPFrameSize:          2048,
+			AFXDPFrameCount:         4096,
+			AFXDPBatchSize:          64,
+			ZeroCopy:                true,
+			SlowPathThreshold:       20.0,
+			StatsInterval:           time.Second * 5,
+			EnableEnhancedProcessor: true,
+			ProcessorConfig: &afxdp.ProcessorConfig{
+				MaxCacheSize:         10000,
+				CacheTTL:            time.Minute * 5,
+				EnableDeepInspection: true,
+				MaxPacketSize:       65536,
+				AuthTokenTTL:        time.Hour,
+			},
 		}
 	}
 
@@ -309,7 +280,7 @@ func (am *AccelerationManager) initializeXDPAFXDPBridge() error {
 	}
 
 	am.afxdpBridge = bridge
-	log.Printf("Acceleration: XDP-AF_XDP bridge initialized")
+	log.Printf("Acceleration: XDP-AF_XDP bridge initialized with enhanced processing")
 	return nil
 }
 
@@ -336,12 +307,6 @@ func (am *AccelerationManager) Start() error {
 	}
 
 	// Start enabled technologies
-	if am.dpdkManager != nil {
-		if err := am.dpdkManager.Start(); err != nil {
-			log.Printf("Acceleration: Failed to start DPDK: %v", err)
-		}
-	}
-
 	if am.xdpManager != nil {
 		if err := am.xdpManager.Start(); err != nil {
 			log.Printf("Acceleration: Failed to start XDP: %v", err)
@@ -372,8 +337,6 @@ func (am *AccelerationManager) isEnabled(tech AccelerationType) bool {
 // techToString converts AccelerationType to string
 func (am *AccelerationManager) techToString(tech AccelerationType) string {
 	switch tech {
-	case AccelDPDK:
-		return "DPDK"
 	case AccelXDP:
 		return "XDP"
 	case AccelAFXDP:

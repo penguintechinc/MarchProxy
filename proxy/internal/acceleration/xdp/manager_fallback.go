@@ -3,130 +3,79 @@
 package xdp
 
 import (
-	"fmt"
+	"log"
 	"time"
-
-	"github.com/penguintech/marchproxy/internal/manager"
 )
 
-// XDPManager handles XDP program lifecycle and management (fallback implementation)
+// XDPManager handles XDP acceleration (fallback implementation)
 type XDPManager struct {
-	enabled bool
-	stats   *XDPStats
 	config  *XDPConfig
+	running bool
 }
 
-// XDPInterface represents an interface with XDP attached (fallback)
-type XDPInterface struct {
-	Name          string
-	Index         int
-	ProgramFD     int
-	AttachFlags   uint32
-	RxPackets     uint64
-	TxPackets     uint64
-	DroppedPkts   uint64
-	RedirectPkts  uint64
+// XDPConfig holds XDP configuration
+type XDPConfig struct {
+	InterfaceName string
+	Mode          string
+	ProgramPath   string
+	MapPinPath    string
+}
+
+// XDPStats holds XDP statistics
+type XDPStats struct {
+	TotalPackets  uint64
+	PassedPackets uint64
+	DroppedPackets uint64
+	TotalBytes    uint64
 	LastUpdate    time.Time
 }
 
-// XDPStats holds XDP performance statistics (fallback)
-type XDPStats struct {
-	TotalPackets      uint64
-	PassedPackets     uint64
-	DroppedPackets    uint64
-	RedirectedPackets uint64
-	TCPPackets        uint64
-	UDPPackets        uint64
-	OtherPackets      uint64
-	MalformedPackets  uint64
-	PacketsPerSecond  uint64
-	LastUpdate        time.Time
-}
-
-// XDPConfig holds XDP configuration parameters (fallback)
-type XDPConfig struct {
-	ProgramPath     string
-	Interfaces      []string
-	AttachMode      string
-	ForceReplace    bool
-	EnableStats     bool
-	StatsInterval   time.Duration
-	BurstSize       uint32
-	BatchTimeout    time.Duration
-}
-
-// ServiceRule represents a service filtering rule for XDP (fallback)
-type ServiceRule struct {
-	ServiceID    uint32
-	IPAddr       uint32
-	Port         uint16
-	Protocol     uint8
-	Action       uint8
-	RedirectIP   uint32
-	RedirectPort uint16
-	AuthRequired uint8
-	Reserved     uint8
-}
-
 // NewXDPManager creates a new XDP manager (fallback)
-func NewXDPManager(enabled bool, config *XDPConfig) *XDPManager {
+func NewXDPManager(config *XDPConfig) (*XDPManager, error) {
 	return &XDPManager{
-		enabled: false, // Always disabled in fallback mode
-		stats: &XDPStats{
-			LastUpdate: time.Now(),
-		},
 		config: config,
-	}
+	}, nil
 }
 
-// Initialize loads the XDP program (fallback)
+// Initialize initializes XDP (fallback - no-op)
 func (xm *XDPManager) Initialize() error {
-	fmt.Printf("XDP: Fallback mode - XDP support not compiled in\n")
+	log.Printf("XDP: Using fallback implementation (XDP not available)")
 	return nil
 }
 
-// AttachToInterface attaches XDP program to a network interface (fallback)
-func (xm *XDPManager) AttachToInterface(interfaceName string) error {
-	fmt.Printf("XDP: Fallback mode - cannot attach to interface %s\n", interfaceName)
+// Start starts XDP processing (fallback - no-op)
+func (xm *XDPManager) Start() error {
+	xm.running = true
+	log.Printf("XDP: Fallback implementation started")
 	return nil
 }
 
-// DetachFromInterface detaches XDP program from a network interface (fallback)
-func (xm *XDPManager) DetachFromInterface(interfaceName string) error {
-	fmt.Printf("XDP: Fallback mode - cannot detach from interface %s\n", interfaceName)
-	return nil
-}
-
-// UpdateServices synchronizes services with XDP maps (fallback)
-func (xm *XDPManager) UpdateServices(services []manager.Service) error {
-	fmt.Printf("XDP: Fallback mode - services update ignored\n")
-	return nil
-}
-
-// Stop detaches from all interfaces and unloads the program (fallback)
+// Stop stops XDP processing (fallback - no-op)
 func (xm *XDPManager) Stop() error {
-	fmt.Printf("XDP: Fallback mode - cleanup complete\n")
+	xm.running = false
+	log.Printf("XDP: Fallback implementation stopped")
 	return nil
 }
 
-// GetStats returns current XDP statistics (fallback)
+// IsRunning returns whether XDP is running
+func (xm *XDPManager) IsRunning() bool {
+	return xm.running
+}
+
+// GetStats returns XDP statistics (fallback - empty stats)
 func (xm *XDPManager) GetStats() *XDPStats {
 	return &XDPStats{
 		LastUpdate: time.Now(),
 	}
 }
 
-// IsEnabled returns whether XDP is enabled (fallback)
-func (xm *XDPManager) IsEnabled() bool {
-	return false
+// UpdateRedirectMap updates the redirect map (fallback - no-op)
+func (xm *XDPManager) UpdateRedirectMap(redirectMap map[uint32]uint32) error {
+	log.Printf("XDP: UpdateRedirectMap called on fallback implementation")
+	return nil
 }
 
-// GetAttachedInterfaces returns list of interfaces with XDP attached (fallback)
-func (xm *XDPManager) GetAttachedInterfaces() []string {
-	return []string{}
-}
-
-// GetInterfaceStats returns statistics for a specific interface (fallback)
-func (xm *XDPManager) GetInterfaceStats(interfaceName string) (*XDPInterface, error) {
-	return nil, fmt.Errorf("XDP not available in fallback mode")
+// GetConfig returns XDP configuration
+func (xm *XDPManager) GetConfig() *XDPConfig {
+	return xm.config
 }
