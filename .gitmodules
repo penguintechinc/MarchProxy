@@ -1,0 +1,5 @@
+[submodule "website"]
+	path = website
+	url = https://github.com/penguintechinc/website.git
+	branch = main
+	sparse-checkout = true
