@@ -40,7 +40,7 @@ class ProxyServerModel:
 
     @staticmethod
     def register_proxy(db: DAL, name: str, hostname: str, cluster_api_key: str,
-                      ip_address: str = None, port: int = 8080,
+                      proxy_type: str = 'egress', ip_address: str = None, port: int = 8080,
                       version: str = None, capabilities: Dict = None) -> Optional[int]:
         """Register new proxy server with cluster API key validation"""
         from .cluster import ClusterModel
@@ -96,6 +96,7 @@ class ProxyServerModel:
             ip_address=ip_address,
             port=port,
             cluster_id=cluster_id,
+            proxy_type=proxy_type,
             version=version,
             capabilities=capabilities or {},
             status='active',
@@ -301,10 +302,17 @@ class ProxyRegistrationRequest(BaseModel):
     name: str
     hostname: str
     cluster_api_key: str
+    proxy_type: str = 'egress'
     ip_address: Optional[str] = None
     port: int = 8080
     version: Optional[str] = None
     capabilities: Optional[Dict[str, Any]] = None
+
+    @validator('proxy_type')
+    def validate_proxy_type(cls, v):
+        if v not in ['egress', 'ingress']:
+            raise ValueError('proxy_type must be either "egress" or "ingress"')
+        return v.lower()
 
     @validator('name')
     def validate_name(cls, v):

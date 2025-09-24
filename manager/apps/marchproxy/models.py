@@ -251,6 +251,8 @@ def define_tables():
         Field('license_error', 'text'),
         
         # Proxy information
+        Field('proxy_type', 'string', length=20, default='egress',
+              requires=IS_IN_SET(['egress', 'ingress'])),
         Field('version', 'string', length=50),
         Field('go_version', 'string', length=50),
         Field('os_arch', 'string', length=50),
@@ -269,7 +271,59 @@ def define_tables():
         # Validation
         format='%(name)s (%(hostname)s)'
     )
-    
+
+    # Ingress Routes for reverse proxy routing rules
+    db.define_table(
+        'ingress_routes',
+        Field('name', 'string', length=255, notnull=True),
+        Field('description', 'text'),
+        Field('cluster_id', 'reference clusters', notnull=True),
+
+        # Routing rules
+        Field('host_pattern', 'string', length=255),  # Host-based routing (*.example.com)
+        Field('path_pattern', 'string', length=255),  # Path-based routing (/api/*)
+        Field('priority', 'integer', default=100),     # Lower numbers = higher priority
+
+        # Backend services
+        Field('backend_services', 'json', notnull=True),  # Array of service IDs
+        Field('load_balancer_algorithm', 'string', length=20, default='round_robin',
+              requires=IS_IN_SET(['round_robin', 'least_connections', 'weighted', 'ip_hash'])),
+        Field('service_weights', 'json'),  # Optional weights for weighted algorithm
+
+        # mTLS and security
+        Field('require_mtls', 'boolean', default=False),
+        Field('allowed_client_cns', 'json'),  # Array of allowed client certificate CNs
+        Field('tls_server_name', 'string', length=255),  # SNI server name
+
+        # Health checking
+        Field('health_check_enabled', 'boolean', default=True),
+        Field('health_check_path', 'string', length=255, default='/healthz'),
+        Field('health_check_interval', 'integer', default=30),  # seconds
+        Field('health_check_timeout', 'integer', default=5),    # seconds
+        Field('health_check_threshold', 'integer', default=3),  # consecutive failures
+
+        # Rate limiting and DDoS protection
+        Field('rate_limit_enabled', 'boolean', default=False),
+        Field('rate_limit_rps', 'integer', default=1000),
+        Field('ddos_protection_enabled', 'boolean', default=False),
+        Field('ddos_threshold_pps', 'integer', default=10000),
+
+        # Headers and transformations
+        Field('request_headers', 'json'),   # Headers to add/modify on request
+        Field('response_headers', 'json'),  # Headers to add/modify on response
+        Field('strip_prefix', 'string', length=255),  # Prefix to strip from path
+        Field('add_prefix', 'string', length=255),    # Prefix to add to path
+
+        # Status and metadata
+        Field('is_active', 'boolean', default=True),
+        Field('created_by', 'reference auth_user'),
+        Field('created_at', 'datetime', default=datetime.utcnow),
+        Field('updated_at', 'datetime', default=datetime.utcnow, update=datetime.utcnow),
+
+        # Validation
+        format='%(name)s (%(host_pattern)s%(path_pattern)s)'
+    )
+
     # License cache for Enterprise edition
     db.define_table(
         'license_cache',
@@ -398,6 +452,15 @@ def create_indexes():
         db.executesql('CREATE INDEX IF NOT EXISTS idx_proxy_servers_cluster ON proxy_servers(cluster_id)')
         db.executesql('CREATE INDEX IF NOT EXISTS idx_proxy_servers_status ON proxy_servers(status)')
         db.executesql('CREATE INDEX IF NOT EXISTS idx_proxy_servers_last_seen ON proxy_servers(last_seen)')
+        db.executesql('CREATE INDEX IF NOT EXISTS idx_proxy_servers_type ON proxy_servers(proxy_type)')
+        db.executesql('CREATE INDEX IF NOT EXISTS idx_proxy_servers_cluster_type ON proxy_servers(cluster_id, proxy_type)')
+
+        # Ingress routes tracking
+        db.executesql('CREATE INDEX IF NOT EXISTS idx_ingress_routes_cluster ON ingress_routes(cluster_id)')
+        db.executesql('CREATE INDEX IF NOT EXISTS idx_ingress_routes_active ON ingress_routes(cluster_id, is_active)')
+        db.executesql('CREATE INDEX IF NOT EXISTS idx_ingress_routes_priority ON ingress_routes(priority)')
+        db.executesql('CREATE INDEX IF NOT EXISTS idx_ingress_routes_host ON ingress_routes(host_pattern)')
+        db.executesql('CREATE INDEX IF NOT EXISTS idx_ingress_routes_path ON ingress_routes(path_pattern)')
         
         # API key lookups
         db.executesql('CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash)')

@@ -39,6 +39,7 @@ def proxy_api(db, jwt_manager):
                 name=data.name,
                 hostname=data.hostname,
                 cluster_api_key=data.cluster_api_key,
+                proxy_type=data.proxy_type,
                 ip_address=data.ip_address,
                 port=data.port,
                 version=data.version,
