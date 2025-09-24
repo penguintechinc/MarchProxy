@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ingress Routes - MarchProxy</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+    <script defer src="https://use.fontawesome.com/releases/v5.3.1/js/all.js"></script>
+</head>
+<body>
+    <nav class="navbar is-dark" role="navigation">
+        <div class="navbar-brand">
+            <a class="navbar-item" href="[[=URL('dashboard')]]">
+                <strong>MarchProxy</strong>
+            </a>
+        </div>
+
+        <div class="navbar-menu">
+            <div class="navbar-start">
+                <a class="navbar-item" href="[[=URL('dashboard')]]">Dashboard</a>
+                <a class="navbar-item" href="[[=URL('clusters')]]">Clusters</a>
+                <a class="navbar-item" href="[[=URL('services')]]">Services</a>
+                <a class="navbar-item is-active" href="[[=URL('ingress_routes')]]">Ingress Routes</a>
+                [[if user.is_admin:]]
+                <a class="navbar-item" href="[[=URL('users')]]">Users</a>
+                [[pass]]
+            </div>
+
+            <div class="navbar-end">
+                <div class="navbar-item has-dropdown is-hoverable">
+                    <a class="navbar-link">
+                        [[=user.username]]
+                    </a>
+                    <div class="navbar-dropdown">
+                        <a class="navbar-item" href="[[=URL('auth/setup-2fa')]]">2FA Setup</a>
+                        <hr class="navbar-divider">
+                        <a class="navbar-item" href="[[=URL('auth/logout')]]">Logout</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <section class="section">
+        <div class="container">
+            <div class="level">
+                <div class="level-left">
+                    <div class="level-item">
+                        <h1 class="title">Ingress Routes</h1>
+                    </div>
+                </div>
+                <div class="level-right">
+                    <div class="level-item">
+                        <a class="button is-primary" href="[[=URL('ingress_routes/create')]]">
+                            <span class="icon">
+                                <i class="fas fa-plus"></i>
+                            </span>
+                            <span>New Route</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="box">
+                <div class="field is-grouped">
+                    <div class="control">
+                        <div class="select">
+                            <select id="clusterFilter">
+                                <option value="">All Clusters</option>
+                                [[for cluster in clusters:]]
+                                <option value="[[=cluster.id]]">[[=cluster.name]]</option>
+                                [[pass]]
+                            </select>
+                        </div>
+                    </div>
+                    <div class="control">
+                        <div class="select">
+                            <select id="statusFilter">
+                                <option value="">All Status</option>
+                                <option value="active">Active</option>
+                                <option value="inactive">Inactive</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="control is-expanded">
+                        <input class="input" type="text" id="searchFilter" placeholder="Search routes...">
+                    </div>
+                </div>
+            </div>
+
+            [[if routes:]]
+            <div class="table-container">
+                <table class="table is-fullwidth is-striped is-hoverable">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Cluster</th>
+                            <th>Host Pattern</th>
+                            <th>Path Pattern</th>
+                            <th>Priority</th>
+                            <th>Backend Services</th>
+                            <th>Load Balancer</th>
+                            <th>mTLS</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        [[for route in routes:]]
+                        <tr data-cluster="[[=route.cluster_id]]" data-status="[[='active' if route.is_active else 'inactive']]">
+                            <td>
+                                <strong>[[=route.name]]</strong>
+                                [[if route.description:]]
+                                <br><small class="has-text-grey">[[=route.description]]</small>
+                                [[pass]]
+                            </td>
+                            <td>
+                                <span class="tag is-info is-light">[[=route.cluster_name]]</span>
+                            </td>
+                            <td>
+                                [[if route.host_pattern:]]
+                                <code>[[=route.host_pattern]]</code>
+                                [[else:]]
+                                <span class="has-text-grey">-</span>
+                                [[pass]]
+                            </td>
+                            <td>
+                                [[if route.path_pattern:]]
+                                <code>[[=route.path_pattern]]</code>
+                                [[else:]]
+                                <span class="has-text-grey">-</span>
+                                [[pass]]
+                            </td>
+                            <td>
+                                <span class="tag [[='is-warning' if route.priority < 50 else 'is-info' if route.priority < 100 else 'is-light']]">
+                                    [[=route.priority]]
+                                </span>
+                            </td>
+                            <td>
+                                [[if route.backend_service_names:]]
+                                    [[for i, service in enumerate(route.backend_service_names):]]
+                                        [[if i > 0:]], [[pass]]
+                                        <span class="tag is-small">[[=service.name]]</span>
+                                    [[pass]]
+                                [[else:]]
+                                <span class="has-text-grey">None</span>
+                                [[pass]]
+                            </td>
+                            <td>
+                                <span class="tag is-light">[[=route.load_balancer_algorithm.replace('_', ' ').title()]]</span>
+                            </td>
+                            <td>
+                                [[if route.require_mtls:]]
+                                <span class="tag is-success">
+                                    <span class="icon">
+                                        <i class="fas fa-lock"></i>
+                                    </span>
+                                    <span>mTLS</span>
+                                </span>
+                                [[else:]]
+                                <span class="tag is-light">No mTLS</span>
+                                [[pass]]
+                            </td>
+                            <td>
+                                [[if route.is_active:]]
+                                <span class="tag is-success">Active</span>
+                                [[else:]]
+                                <span class="tag is-danger">Inactive</span>
+                                [[pass]]
+                            </td>
+                            <td>
+                                <div class="buttons are-small">
+                                    <a class="button is-info is-light" href="[[=URL('ingress_routes/view', route.id)]]">
+                                        <span class="icon">
+                                            <i class="fas fa-eye"></i>
+                                        </span>
+                                    </a>
+                                    <a class="button is-warning is-light" href="[[=URL('ingress_routes/edit', route.id)]]">
+                                        <span class="icon">
+                                            <i class="fas fa-edit"></i>
+                                        </span>
+                                    </a>
+                                    <button class="button is-danger is-light" onclick="deleteRoute([[=route.id]], '[[=route.name]]')">
+                                        <span class="icon">
+                                            <i class="fas fa-trash"></i>
+                                        </span>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        [[pass]]
+                    </tbody>
+                </table>
+            </div>
+            [[else:]]
+            <div class="notification is-info is-light">
+                <div class="has-text-centered">
+                    <span class="icon is-large">
+                        <i class="fas fa-route fa-2x"></i>
+                    </span>
+                    <p class="title is-4">No Ingress Routes Found</p>
+                    <p class="subtitle">Create your first ingress route to start routing traffic to your services.</p>
+                    <a class="button is-primary" href="[[=URL('ingress_routes/create')]]">
+                        <span class="icon">
+                            <i class="fas fa-plus"></i>
+                        </span>
+                        <span>Create First Route</span>
+                    </a>
+                </div>
+            </div>
+            [[pass]]
+        </div>
+    </section>
+
+    <!-- Delete Confirmation Modal -->
+    <div class="modal" id="deleteModal">
+        <div class="modal-background"></div>
+        <div class="modal-card">
+            <header class="modal-card-head">
+                <p class="modal-card-title">Delete Ingress Route</p>
+                <button class="delete" aria-label="close" onclick="closeDeleteModal()"></button>
+            </header>
+            <section class="modal-card-body">
+                <p>Are you sure you want to delete the ingress route <strong id="deleteRouteName"></strong>?</p>
+                <p class="has-text-danger mt-3">This action cannot be undone and will stop routing traffic for this route.</p>
+            </section>
+            <footer class="modal-card-foot">
+                <button class="button is-danger" onclick="confirmDelete()">Delete</button>
+                <button class="button" onclick="closeDeleteModal()">Cancel</button>
+            </footer>
+        </div>
+    </div>
+
+    <script>
+        let deleteRouteId = null;
+
+        function deleteRoute(routeId, routeName) {
+            deleteRouteId = routeId;
+            document.getElementById('deleteRouteName').textContent = routeName;
+            document.getElementById('deleteModal').classList.add('is-active');
+        }
+
+        function closeDeleteModal() {
+            document.getElementById('deleteModal').classList.remove('is-active');
+            deleteRouteId = null;
+        }
+
+        function confirmDelete() {
+            if (deleteRouteId) {
+                fetch(`/api/ingress-routes/${deleteRouteId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.message) {
+                        location.reload();
+                    } else {
+                        alert('Error deleting route: ' + (data.error || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    alert('Error deleting route: ' + error.message);
+                });
+            }
+            closeDeleteModal();
+        }
+
+        // Filtering functionality
+        document.getElementById('clusterFilter').addEventListener('change', filterRoutes);
+        document.getElementById('statusFilter').addEventListener('change', filterRoutes);
+        document.getElementById('searchFilter').addEventListener('input', filterRoutes);
+
+        function filterRoutes() {
+            const clusterFilter = document.getElementById('clusterFilter').value;
+            const statusFilter = document.getElementById('statusFilter').value;
+            const searchFilter = document.getElementById('searchFilter').value.toLowerCase();
+            const rows = document.querySelectorAll('tbody tr');
+
+            rows.forEach(row => {
+                const cluster = row.getAttribute('data-cluster');
+                const status = row.getAttribute('data-status');
+                const text = row.textContent.toLowerCase();
+
+                const clusterMatch = !clusterFilter || cluster === clusterFilter;
+                const statusMatch = !statusFilter || status === statusFilter;
+                const searchMatch = !searchFilter || text.includes(searchFilter);
+
+                if (clusterMatch && statusMatch && searchMatch) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create Ingress Route - MarchProxy</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+    <script defer src="https://use.fontawesome.com/releases/v5.3.1/js/all.js"></script>
+</head>
+<body>
+    <nav class="navbar is-dark" role="navigation">
+        <div class="navbar-brand">
+            <a class="navbar-item" href="[[=URL('dashboard')]]">
+                <strong>MarchProxy</strong>
+            </a>
+        </div>
+
+        <div class="navbar-menu">
+            <div class="navbar-start">
+                <a class="navbar-item" href="[[=URL('dashboard')]]">Dashboard</a>
+                <a class="navbar-item" href="[[=URL('clusters')]]">Clusters</a>
+                <a class="navbar-item" href="[[=URL('services')]]">Services</a>
+                <a class="navbar-item is-active" href="[[=URL('ingress_routes')]]">Ingress Routes</a>
+                [[if user.is_admin:]]
+                <a class="navbar-item" href="[[=URL('users')]]">Users</a>
+                [[pass]]
+            </div>
+
+            <div class="navbar-end">
+                <div class="navbar-item has-dropdown is-hoverable">
+                    <a class="navbar-link">
+                        [[=user.username]]
+                    </a>
+                    <div class="navbar-dropdown">
+                        <a class="navbar-item" href="[[=URL('auth/setup-2fa')]]">2FA Setup</a>
+                        <hr class="navbar-divider">
+                        <a class="navbar-item" href="[[=URL('auth/logout')]]">Logout</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <section class="section">
+        <div class="container">
+            <nav class="breadcrumb" aria-label="breadcrumbs">
+                <ul>
+                    <li><a href="[[=URL('ingress_routes')]]">Ingress Routes</a></li>
+                    <li class="is-active"><a href="#" aria-current="page">Create New Route</a></li>
+                </ul>
+            </nav>
+
+            <h1 class="title">Create Ingress Route</h1>
+
+            <form id="routeForm" method="post">
+                <div class="columns">
+                    <div class="column is-8">
+                        <!-- Basic Information -->
+                        <div class="box">
+                            <h2 class="subtitle">Basic Information</h2>
+
+                            <div class="field">
+                                <label class="label">Route Name</label>
+                                <div class="control">
+                                    <input class="input" type="text" name="name" placeholder="api-backend-route" required>
+                                </div>
+                                <p class="help">A unique name for this ingress route</p>
+                            </div>
+
+                            <div class="field">
+                                <label class="label">Description</label>
+                                <div class="control">
+                                    <textarea class="textarea" name="description" placeholder="Route for API backend services"></textarea>
+                                </div>
+                                <p class="help">Optional description for this route</p>
+                            </div>
+
+                            <div class="field">
+                                <label class="label">Cluster</label>
+                                <div class="control">
+                                    <div class="select is-fullwidth">
+                                        <select name="cluster_id" required onchange="loadServices()">
+                                            <option value="">Select a cluster</option>
+                                            [[for cluster in clusters:]]
+                                            <option value="[[=cluster.id]]">[[=cluster.name]]</option>
+                                            [[pass]]
+                                        </select>
+                                    </div>
+                                </div>
+                                <p class="help">The cluster this route belongs to</p>
+                            </div>
+                        </div>
+
+                        <!-- Routing Rules -->
+                        <div class="box">
+                            <h2 class="subtitle">Routing Rules</h2>
+
+                            <div class="field">
+                                <label class="label">Host Pattern</label>
+                                <div class="control">
+                                    <input class="input" type="text" name="host_pattern" placeholder="api.example.com or *.example.com">
+                                </div>
+                                <p class="help">Host header to match (supports wildcards). Leave empty to match all hosts.</p>
+                            </div>
+
+                            <div class="field">
+                                <label class="label">Path Pattern</label>
+                                <div class="control">
+                                    <input class="input" type="text" name="path_pattern" placeholder="/api/* or /api/v1">
+                                </div>
+                                <p class="help">URL path to match (supports wildcards). Leave empty to match all paths.</p>
+                            </div>
+
+                            <div class="field">
+                                <label class="label">Priority</label>
+                                <div class="control">
+                                    <input class="input" type="number" name="priority" value="100" min="1" max="1000">
+                                </div>
+                                <p class="help">Lower numbers = higher priority (1-1000)</p>
+                            </div>
+                        </div>
+
+                        <!-- Backend Services -->
+                        <div class="box">
+                            <h2 class="subtitle">Backend Services</h2>
+
+                            <div class="field">
+                                <label class="label">Services</label>
+                                <div class="control">
+                                    <div class="select is-multiple is-fullwidth">
+                                        <select name="backend_services" multiple size="5" id="servicesSelect">
+                                            <option disabled>Select a cluster first</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <p class="help">Select one or more backend services to route traffic to</p>
+                            </div>
+
+                            <div class="field">
+                                <label class="label">Load Balancer Algorithm</label>
+                                <div class="control">
+                                    <div class="select is-fullwidth">
+                                        <select name="load_balancer_algorithm">
+                                            <option value="round_robin">Round Robin</option>
+                                            <option value="least_connections">Least Connections</option>
+                                            <option value="weighted">Weighted</option>
+                                            <option value="ip_hash">IP Hash</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <p class="help">How to distribute traffic among backend services</p>
+                            </div>
+                        </div>
+
+                        <!-- Security Settings -->
+                        <div class="box">
+                            <h2 class="subtitle">Security Settings</h2>
+
+                            <div class="field">
+                                <div class="control">
+                                    <label class="checkbox">
+                                        <input type="checkbox" name="require_mtls">
+                                        Require mTLS Authentication
+                                    </label>
+                                </div>
+                                <p class="help">Require mutual TLS certificate authentication</p>
+                            </div>
+
+                            <div class="field" id="tlsServerNameField" style="display: none;">
+                                <label class="label">TLS Server Name</label>
+                                <div class="control">
+                                    <input class="input" type="text" name="tls_server_name" placeholder="api.example.com">
+                                </div>
+                                <p class="help">Server name for SNI (Server Name Indication)</p>
+                            </div>
+                        </div>
+
+                        <!-- Rate Limiting -->
+                        <div class="box">
+                            <h2 class="subtitle">Rate Limiting & DDoS Protection</h2>
+
+                            <div class="field">
+                                <div class="control">
+                                    <label class="checkbox">
+                                        <input type="checkbox" name="rate_limit_enabled" onchange="toggleRateLimit()">
+                                        Enable Rate Limiting
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div id="rateLimitFields" style="display: none;">
+                                <div class="field">
+                                    <label class="label">Requests Per Second</label>
+                                    <div class="control">
+                                        <input class="input" type="number" name="rate_limit_rps" value="1000" min="1">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="field">
+                                <div class="control">
+                                    <label class="checkbox">
+                                        <input type="checkbox" name="ddos_protection_enabled" onchange="toggleDDoSProtection()">
+                                        Enable DDoS Protection
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div id="ddosFields" style="display: none;">
+                                <div class="field">
+                                    <label class="label">DDoS Threshold (Packets Per Second)</label>
+                                    <div class="control">
+                                        <input class="input" type="number" name="ddos_threshold_pps" value="10000" min="1">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Health Checks -->
+                        <div class="box">
+                            <h2 class="subtitle">Health Checks</h2>
+
+                            <div class="field">
+                                <div class="control">
+                                    <label class="checkbox">
+                                        <input type="checkbox" name="health_check_enabled" checked onchange="toggleHealthChecks()">
+                                        Enable Health Checks
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div id="healthCheckFields">
+                                <div class="columns">
+                                    <div class="column">
+                                        <div class="field">
+                                            <label class="label">Health Check Path</label>
+                                            <div class="control">
+                                                <input class="input" type="text" name="health_check_path" value="/healthz">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="column">
+                                        <div class="field">
+                                            <label class="label">Interval (seconds)</label>
+                                            <div class="control">
+                                                <input class="input" type="number" name="health_check_interval" value="30" min="5">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="columns">
+                                    <div class="column">
+                                        <div class="field">
+                                            <label class="label">Timeout (seconds)</label>
+                                            <div class="control">
+                                                <input class="input" type="number" name="health_check_timeout" value="5" min="1">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="column">
+                                        <div class="field">
+                                            <label class="label">Failure Threshold</label>
+                                            <div class="control">
+                                                <input class="input" type="number" name="health_check_threshold" value="3" min="1">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sidebar -->
+                    <div class="column is-4">
+                        <div class="box">
+                            <h2 class="subtitle">Actions</h2>
+                            <div class="field is-grouped">
+                                <div class="control">
+                                    <button class="button is-primary" type="submit">
+                                        <span class="icon">
+                                            <i class="fas fa-save"></i>
+                                        </span>
+                                        <span>Create Route</span>
+                                    </button>
+                                </div>
+                                <div class="control">
+                                    <a class="button" href="[[=URL('ingress_routes')]]">
+                                        <span>Cancel</span>
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="box">
+                            <h2 class="subtitle">Route Examples</h2>
+                            <div class="content is-small">
+                                <p><strong>API Route:</strong></p>
+                                <ul>
+                                    <li>Host: <code>api.example.com</code></li>
+                                    <li>Path: <code>/v1/*</code></li>
+                                </ul>
+
+                                <p><strong>Wildcard Subdomain:</strong></p>
+                                <ul>
+                                    <li>Host: <code>*.app.example.com</code></li>
+                                    <li>Path: <code>/</code></li>
+                                </ul>
+
+                                <p><strong>Path-based routing:</strong></p>
+                                <ul>
+                                    <li>Host: <code>example.com</code></li>
+                                    <li>Path: <code>/api/*</code></li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </section>
+
+    <script>
+        function loadServices() {
+            const clusterId = document.querySelector('select[name="cluster_id"]').value;
+            const servicesSelect = document.getElementById('servicesSelect');
+
+            if (!clusterId) {
+                servicesSelect.innerHTML = '<option disabled>Select a cluster first</option>';
+                return;
+            }
+
+            servicesSelect.innerHTML = '<option disabled>Loading...</option>';
+
+            fetch(`/api/clusters/${clusterId}/services`)
+                .then(response => response.json())
+                .then(data => {
+                    servicesSelect.innerHTML = '';
+                    if (data.services && data.services.length > 0) {
+                        data.services.forEach(service => {
+                            const option = document.createElement('option');
+                            option.value = service.id;
+                            option.textContent = `${service.name} (${service.ip_fqdn})`;
+                            servicesSelect.appendChild(option);
+                        });
+                    } else {
+                        servicesSelect.innerHTML = '<option disabled>No services found in this cluster</option>';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading services:', error);
+                    servicesSelect.innerHTML = '<option disabled>Error loading services</option>';
+                });
+        }
+
+        function toggleRateLimit() {
+            const enabled = document.querySelector('input[name="rate_limit_enabled"]').checked;
+            document.getElementById('rateLimitFields').style.display = enabled ? 'block' : 'none';
+        }
+
+        function toggleDDoSProtection() {
+            const enabled = document.querySelector('input[name="ddos_protection_enabled"]').checked;
+            document.getElementById('ddosFields').style.display = enabled ? 'block' : 'none';
+        }
+
+        function toggleHealthChecks() {
+            const enabled = document.querySelector('input[name="health_check_enabled"]').checked;
+            document.getElementById('healthCheckFields').style.display = enabled ? 'block' : 'none';
+        }
+
+        // Show/hide mTLS fields
+        document.querySelector('input[name="require_mtls"]').addEventListener('change', function() {
+            const tlsField = document.getElementById('tlsServerNameField');
+            tlsField.style.display = this.checked ? 'block' : 'none';
+        });
+
+        // Form submission
+        document.getElementById('routeForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            const formData = new FormData(this);
+            const data = {};
+
+            // Convert form data to JSON
+            for (let [key, value] of formData.entries()) {
+                if (key === 'backend_services') {
+                    if (!data[key]) data[key] = [];
+                    data[key].push(parseInt(value));
+                } else if (key === 'require_mtls' || key === 'rate_limit_enabled' ||
+                          key === 'ddos_protection_enabled' || key === 'health_check_enabled') {
+                    data[key] = true; // Checkbox is checked if present
+                } else if (key === 'priority' || key === 'rate_limit_rps' ||
+                          key === 'ddos_threshold_pps' || key === 'health_check_interval' ||
+                          key === 'health_check_timeout' || key === 'health_check_threshold') {
+                    data[key] = parseInt(value);
+                } else {
+                    data[key] = value;
+                }
+            }
+
+            // Set default values for unchecked checkboxes
+            if (!data.require_mtls) data.require_mtls = false;
+            if (!data.rate_limit_enabled) data.rate_limit_enabled = false;
+            if (!data.ddos_protection_enabled) data.ddos_protection_enabled = false;
+            if (!data.health_check_enabled) data.health_check_enabled = false;
+
+            fetch('/api/ingress-routes', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.route_id) {
+                    window.location.href = '/ingress_routes';
+                } else {
+                    alert('Error creating route: ' + (data.error || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                alert('Error creating route: ' + error.message);
+            });
+        });
+    </script>
+</body>
+</html>
