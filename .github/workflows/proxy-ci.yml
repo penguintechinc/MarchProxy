@@ -5,11 +5,13 @@ on:
     branches: [ main, develop ]
     paths:
       - 'proxy-egress/**'
+      - '.version'
       - '.github/workflows/proxy-ci.yml'
   pull_request:
     branches: [ main ]
     paths:
       - 'proxy-egress/**'
+      - '.version'
       - '.github/workflows/proxy-ci.yml'
 
 env:
@@ -20,13 +22,38 @@ jobs:
   lint-and-test:
     name: Lint and Test Proxy Egress
     runs-on: ubuntu-latest
+    outputs:
+      epoch64: ${{ steps.timestamp.outputs.epoch64 }}
+      version: ${{ steps.version.outputs.version }}
+      full_version: ${{ steps.version.outputs.full_version }}
     defaults:
       run:
-        working-directory: ./proxy-egress-egress-egress
+        working-directory: ./proxy-egress
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+
+    - name: Generate epoch64 timestamp
+      id: timestamp
+      run: |
+        EPOCH64=$(date +%s)
+        echo "epoch64=$EPOCH64" >> $GITHUB_OUTPUT
+        echo "Epoch64 timestamp: $EPOCH64"
+
+    - name: Detect version from .version file
+      id: version
+      run: |
+        if [ -f ../.version ]; then
+          VERSION=$(cat ../.version | tr -d '[:space:]')
+          SEMVER=$(echo "$VERSION" | cut -d'.' -f1-3)
+        else
+          VERSION="0.0.0"
+          SEMVER="0.0.0"
+        fi
+        echo "version=$SEMVER" >> $GITHUB_OUTPUT
+        echo "full_version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Detected version: $SEMVER (full: $VERSION)"
 
     - name: Set up Go
       uses: actions/setup-go@v5
@@ -76,7 +103,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ./proxy-egress-egress
+        working-directory: ./proxy-egress
 
     steps:
     - name: Checkout code
@@ -86,6 +113,17 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: '1.21'
+
+    - name: Install golangci-lint
+      uses: golangci/golangci-lint-action@v4
+      with:
+        version: latest
+        working-directory: ./proxy-egress
+
+    - name: Run golangci-lint
+      working-directory: ./proxy-egress
+      run: |
+        golangci-lint run ./...
 
     - name: Install security tools
       run: |

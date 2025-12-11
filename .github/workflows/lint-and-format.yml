@@ -3,8 +3,21 @@ name: Lint and Format
 on:
   push:
     branches: [ main, develop, 'feature/*', 'release/*' ]
+    paths:
+      - 'manager/**'
+      - 'proxy/**'
+      - 'proxy-egress/**'
+      - 'proxy-ingress/**'
+      - '.version'
+      - '.github/workflows/lint-and-format.yml'
   pull_request:
     branches: [ main, develop ]
+    paths:
+      - 'manager/**'
+      - 'proxy/**'
+      - 'proxy-egress/**'
+      - 'proxy-ingress/**'
+      - '.version'
 
 jobs:
   # Python linting and formatting

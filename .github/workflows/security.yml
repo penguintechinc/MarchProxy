@@ -3,8 +3,21 @@ name: Security Scanning
 on:
   push:
     branches: [ main, develop ]
+    paths:
+      - 'manager/**'
+      - 'proxy/**'
+      - 'proxy-egress/**'
+      - 'proxy-ingress/**'
+      - '.version'
+      - '.github/workflows/security.yml'
   pull_request:
     branches: [ main ]
+    paths:
+      - 'manager/**'
+      - 'proxy/**'
+      - 'proxy-egress/**'
+      - 'proxy-ingress/**'
+      - '.version'
   schedule:
     # Run security scans daily at 2 AM UTC
     - cron: '0 2 * * *'

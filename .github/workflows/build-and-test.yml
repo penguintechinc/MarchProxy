@@ -4,8 +4,17 @@ on:
   push:
     branches: [ main, develop, 'feature/*', 'release/*' ]
     tags: [ 'v*' ]
+    paths:
+      - 'proxy/**'
+      - 'manager/**'
+      - '.version'
+      - '.github/workflows/build-and-test.yml'
   pull_request:
     branches: [ main, develop ]
+    paths:
+      - 'proxy/**'
+      - 'manager/**'
+      - '.version'
 
 env:
   REGISTRY: ghcr.io
@@ -16,9 +25,34 @@ jobs:
   # Test Go proxy application
   test-proxy:
     runs-on: ubuntu-latest
+    outputs:
+      epoch64: ${{ steps.timestamp.outputs.epoch64 }}
+      version: ${{ steps.version.outputs.version }}
+      full_version: ${{ steps.version.outputs.full_version }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Generate epoch64 timestamp
+        id: timestamp
+        run: |
+          EPOCH64=$(date +%s)
+          echo "epoch64=$EPOCH64" >> $GITHUB_OUTPUT
+          echo "Epoch64 timestamp: $EPOCH64"
+
+      - name: Detect version from .version file
+        id: version
+        run: |
+          if [ -f .version ]; then
+            VERSION=$(cat .version | tr -d '[:space:]')
+            SEMVER=$(echo "$VERSION" | cut -d'.' -f1-3)
+          else
+            VERSION="0.0.0"
+            SEMVER="0.0.0"
+          fi
+          echo "version=$SEMVER" >> $GITHUB_OUTPUT
+          echo "full_version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Detected version: $SEMVER (full: $VERSION)"
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -39,6 +73,24 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y clang llvm libbpf-dev linux-headers-$(uname -r) || true
+
+      - name: Install golangci-lint
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: latest
+          working-directory: ./proxy
+
+      - name: Run golangci-lint
+        working-directory: ./proxy
+        run: |
+          golangci-lint run ./...
+
+      - name: Run gosec security scanner
+        working-directory: ./proxy
+        run: |
+          go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest
+          gosec -fmt json -out gosec-report.json ./... || true
+          cat gosec-report.json
 
       - name: Build proxy
         working-directory: ./proxy
@@ -121,10 +173,37 @@ jobs:
     strategy:
       matrix:
         component: [manager, proxy]
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Generate build metadata
+        id: build_meta
+        run: |
+          EPOCH64=$(date +%s)
+          if [ -f .version ]; then
+            VERSION=$(cat .version | tr -d '[:space:]')
+            SEMVER=$(echo "$VERSION" | cut -d'.' -f1-3)
+          else
+            VERSION="0.0.0"
+            SEMVER="0.0.0"
+          fi
+
+          # Determine branch type for version tagging
+          BRANCH="${{ github.ref_name }}"
+          IS_MAIN=$([[ "$BRANCH" == "main" ]] && echo "true" || echo "false")
+          IS_RELEASE=$([[ "$BRANCH" =~ ^release/ ]] && echo "true" || echo "false")
+          IS_TAG=$([[ "${{ github.ref }}" =~ ^refs/tags/ ]] && echo "true" || echo "false")
+          IS_DEVELOP=$([[ "$BRANCH" == "develop" ]] && echo "true" || echo "false")
+
+          echo "epoch64=$EPOCH64" >> $GITHUB_OUTPUT
+          echo "version=$SEMVER" >> $GITHUB_OUTPUT
+          echo "full_version=$VERSION" >> $GITHUB_OUTPUT
+          echo "is_main=$IS_MAIN" >> $GITHUB_OUTPUT
+          echo "is_release=$IS_RELEASE" >> $GITHUB_OUTPUT
+          echo "is_tag=$IS_TAG" >> $GITHUB_OUTPUT
+          echo "is_develop=$IS_DEVELOP" >> $GITHUB_OUTPUT
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -145,15 +224,15 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ matrix.component == 'manager' && env.IMAGE_NAME_MANAGER || env.IMAGE_NAME_PROXY }}
           tags: |
-            # Alpha tag for feature branches and develop
-            type=raw,value=alpha,enable=${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/heads/release/') && !startsWith(github.ref, 'refs/tags/') }}
-            # Beta tag for main branch
-            type=raw,value=beta,enable=${{ github.ref == 'refs/heads/main' }}
-            # Release tags for release branches and version tags
-            type=semver,pattern={{version}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-            type=match,pattern=v(\d+\.\d+\.\d+),group=1,enable=${{ startsWith(github.ref, 'refs/heads/release/') }}
-            # Latest tag for release tags only
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            # Development builds with epoch64 timestamps
+            type=raw,value=alpha-${{ steps.build_meta.outputs.epoch64 }},enable=${{ !fromJSON(steps.build_meta.outputs.is_main) && !fromJSON(steps.build_meta.outputs.is_tag) }}
+            type=raw,value=beta-${{ steps.build_meta.outputs.epoch64 }},enable=${{ fromJSON(steps.build_meta.outputs.is_main) && !fromJSON(steps.build_meta.outputs.is_tag) }}
+            # Version-based tags on version changes (conditional alpha/beta)
+            type=raw,value=v${{ steps.build_meta.outputs.version }}-alpha,enable=${{ !fromJSON(steps.build_meta.outputs.is_main) && !fromJSON(steps.build_meta.outputs.is_tag) }}
+            type=raw,value=v${{ steps.build_meta.outputs.version }}-beta,enable=${{ fromJSON(steps.build_meta.outputs.is_main) && !fromJSON(steps.build_meta.outputs.is_tag) }}
+            # Release tags for tagged versions
+            type=semver,pattern={{version}},enable=${{ fromJSON(steps.build_meta.outputs.is_tag) }}
+            type=raw,value=latest,enable=${{ fromJSON(steps.build_meta.outputs.is_tag) }}
             # Additional metadata tags
             type=ref,event=pr,prefix=pr-
             type=sha,prefix={{branch}}-,format=short
