@@ -93,6 +93,33 @@ Project fully planned with comprehensive documentation architecture. Ready to be
 - **Testing**: TBD based on project structure (will be defined during Phase 1)
 - **Linting**: TBD based on project structure (will be defined during Phase 1)
 
+## Docker Image Standards
+
+### Base Image Requirements
+- **ALWAYS use Debian variants** for all container images (no Alpine)
+- Use Debian release codenames: `bookworm`, `trixie`, `bullseye`
+- Examples of correct base images:
+  - Go: `golang:1.24-bookworm`, `golang:1.24-trixie`
+  - Python: `python:3.12-bookworm`, `python:3.12-slim`
+  - Node: `node:20-bookworm-slim`, `node:22-bookworm`
+  - Runtime: `debian:bookworm-slim`, `debian:12-slim`
+- **NEVER use Alpine images** (`*-alpine`) due to musl libc compatibility issues
+
+### Approved Languages and Versions
+- **Python**: 3.12+ only
+- **Go**: 1.23.x or 1.24.x only
+- **Node.js**: 20.x or 22.x LTS only
+- **NO Rust, C++, or other languages** unless explicitly approved
+
+### Health Check Requirements
+- **ALWAYS use native language health checks** instead of curl/wget
+- Health checks should use the application's own binary or runtime
+- Examples:
+  - **Go containers**: `CMD ["./app", "--healthcheck"]` (implement `--healthcheck` flag)
+  - **Python containers**: `CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"`
+  - **Node containers**: `CMD node -e "const http = require('http'); http.get('http://localhost:3000/', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1));"`
+- This reduces image size and eliminates unnecessary dependencies
+
 ## py4web Documentation and Research
 - **Official Documentation**: https://py4web.com/_documentation
 - **Always research py4web native features before implementing custom solutions**

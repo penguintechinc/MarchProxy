@@ -2,12 +2,9 @@
 # Combines Envoy proxy with Go supervisor for ModuleService gRPC interface
 
 # Stage 1: Build Go supervisor
-FROM golang:1.24-bookworm AS go-builder
+FROM golang:1.24-trixie AS go-builder
 
 WORKDIR /build
-
-# Copy proto definitions first
-COPY proto/ /build/proto/
 
 # Copy go module files
 COPY proxy-alb/go.mod proxy-alb/go.sum ./
@@ -15,7 +12,8 @@ COPY proxy-alb/go.mod proxy-alb/go.sum ./
 # Download dependencies
 RUN go mod download
 
-# Copy source code
+# Copy proto and source code
+COPY proto/ ./proto/
 COPY proxy-alb/ ./
 
 # Build the supervisor binary
@@ -25,7 +23,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     main.go
 
 # Stage 2: Generate protobuf code
-FROM golang:1.24-bookworm AS proto-builder
+FROM golang:1.24-trixie AS proto-builder
 
 WORKDIR /build
 

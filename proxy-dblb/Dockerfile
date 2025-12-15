@@ -1,8 +1,12 @@
 # Multi-stage build for MarchProxy DBLB
-FROM golang:1.24.7-alpine AS builder
+FROM golang:1.24-bookworm AS builder
 
 # Install build dependencies
-RUN apk add --no-cache git make gcc musl-dev
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    make \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /build
@@ -23,14 +27,17 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     ./cmd/main.go
 
 # Runtime stage
-FROM alpine:latest
+FROM debian:bookworm-slim
 
 # Install runtime dependencies
-RUN apk add --no-cache ca-certificates tzdata
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    tzdata \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
-RUN addgroup -g 1000 dblb && \
-    adduser -D -u 1000 -G dblb dblb
+RUN groupadd -g 1000 dblb && \
+    useradd -u 1000 -g dblb -m -s /sbin/nologin dblb
 
 # Set working directory
 WORKDIR /app
@@ -38,8 +45,7 @@ WORKDIR /app
 # Copy binary from builder
 COPY --from=builder /build/proxy-dblb /app/proxy-dblb
 
-# Copy configuration example (optional)
-COPY --from=builder /build/*.yaml /app/ 2>/dev/null || true
+# Configuration is mounted at runtime, no default config needed
 
 # Set ownership
 RUN chown -R dblb:dblb /app
@@ -63,9 +69,9 @@ EXPOSE 7002
 # gRPC
 EXPOSE 50052
 
-# Health check
+# Health check using Go binary (no wget dependency)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:7002/healthz || exit 1
+    CMD ["/app/proxy-dblb", "--healthcheck"]
 
 # Set entrypoint
 ENTRYPOINT ["/app/proxy-dblb"]

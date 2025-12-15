@@ -2,7 +2,7 @@
 # Supports: production, development, testing, debug targets
 
 # Build stage
-FROM golang:1.24-bookworm AS builder
+FROM golang:1.24-trixie AS builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
@@ -30,7 +30,6 @@ FROM debian:12-slim AS production
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
     ca-certificates \
-    curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -48,9 +47,9 @@ RUN mkdir -p /var/log/marchproxy/nlb \
 # 50051 - gRPC server port
 EXPOSE 8080 8082 50051
 
-# Health check
+# Health check using Go binary (no curl dependency)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8082/healthz || exit 1
+    CMD ["./proxy-nlb", "--healthcheck"]
 
 # Run as non-root user
 RUN useradd -r -u 1000 marchproxy
@@ -101,7 +100,6 @@ RUN apt-get update && apt-get install -y \
     tcpdump \
     net-tools \
     vim \
-    grpcurl \
     && rm -rf /var/lib/apt/lists/*
 
 # Build with debug symbols

@@ -129,7 +129,7 @@ safety==2.3.0
 
 ### Framework & Tools
 
-- **Go Version**: 1.21+ (1.22+ preferred)
+- **Go Version**: 1.23+ (1.24 preferred)
 - **Package Manager**: go mod
 - **Module Name**: github.com/penguintechinc/marchproxy
 - **Linting**: golangci-lint
@@ -182,7 +182,7 @@ proxy-egress/
 ```go
 module github.com/penguintechinc/marchproxy
 
-go 1.22
+go 1.24
 
 require (
     github.com/prometheus/client_golang v1.18.0
@@ -213,9 +213,42 @@ require (
 
 ### Base Images
 
-- **Python**: debian:bookworm-slim (not alpine)
-- **Go**: debian:bookworm-slim + golang:1.22
-- **Minimum security**: Latest patches applied
+**ALWAYS use Debian variants** for all container images (no Alpine):
+- Use Debian release codenames: `bookworm`, `trixie`, `bullseye`
+- Examples of correct base images:
+  - **Go**: `golang:1.24-bookworm`, `golang:1.24-trixie`
+  - **Python**: `python:3.12-bookworm`, `python:3.12-slim`
+  - **Node.js**: `node:20-bookworm-slim`, `node:22-bookworm`
+  - **Runtime**: `debian:bookworm-slim`, `debian:12-slim`
+- **NEVER use Alpine images** (`*-alpine`) due to musl libc compatibility issues
+
+### Approved Languages and Versions
+
+- **Python**: 3.12+ only
+- **Go**: 1.23.x or 1.24.x only (use 1.24 for latest features)
+- **Node.js**: 20.x or 22.x LTS only
+- **NO Rust, C++, or other languages** unless explicitly approved
+
+### Health Check Requirements
+
+**ALWAYS use native language health checks** instead of curl/wget:
+- This reduces image size and eliminates unnecessary dependencies
+- Health checks should use the application's own binary or runtime
+
+**Examples**:
+```dockerfile
+# Go containers - implement --healthcheck flag in the binary
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD ["./app", "--healthcheck"]
+
+# Python containers - use urllib from standard library
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"
+
+# Node.js containers - use http module from standard library
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD node -e "const http = require('http'); http.get('http://localhost:3000/', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1));"
+```
 
 ### Multi-Stage Builds
 
@@ -223,16 +256,18 @@ All Dockerfiles must use multi-stage builds:
 
 ```dockerfile
 # Build stage
-FROM golang:1.22 AS builder
+FROM golang:1.24-bookworm AS builder
 WORKDIR /build
 COPY . .
-RUN go build -o app ./cmd/main.go
+RUN CGO_ENABLED=0 go build -o app ./cmd/main.go
 
 # Runtime stage
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y ca-certificates
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /build/app /usr/local/bin/
 EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD ["/usr/local/bin/app", "--healthcheck"]
 CMD ["app"]
 ```
 

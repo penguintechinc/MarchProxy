@@ -1,10 +1,13 @@
 # MarchProxy RTMP Container - CPU Version
 # Supports x264 and x265 software encoding
 
-FROM golang:1.21-alpine AS builder
+FROM golang:1.24-bookworm AS builder
 
 # Install build dependencies
-RUN apk add --no-cache git make
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    make \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /build
@@ -19,18 +22,19 @@ COPY . .
 # Build the application
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o rtmp-proxy ./cmd/rtmp
 
-# Final stage
-FROM alpine:3.18
+# CPU stage (default)
+FROM debian:bookworm-slim AS cpu
 
 # Install FFmpeg and runtime dependencies
-RUN apk add --no-cache \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     ca-certificates \
-    tzdata
+    tzdata \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
-RUN addgroup -g 1000 marchproxy && \
-    adduser -D -u 1000 -G marchproxy marchproxy
+RUN groupadd -g 1000 marchproxy && \
+    useradd -u 1000 -g marchproxy -m -s /sbin/nologin marchproxy
 
 # Create directories
 RUN mkdir -p /var/lib/marchproxy/streams && \
@@ -61,9 +65,9 @@ ENV RTMP_HOST=0.0.0.0 \
     RTMP_MAX_STREAMS=100 \
     RTMP_MAX_RESOLUTION=1080
 
-# Health check
+# Health check using Go binary (no nc dependency)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD ["sh", "-c", "nc -z localhost 1935 && nc -z localhost 50053 || exit 1"]
+    CMD ["/usr/local/bin/rtmp-proxy", "--healthcheck"]
 
 # Run the application
 ENTRYPOINT ["/usr/local/bin/rtmp-proxy"]
