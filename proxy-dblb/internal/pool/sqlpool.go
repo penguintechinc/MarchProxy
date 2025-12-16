@@ -62,10 +62,10 @@ func NewSQLPool(protocol, dsn string, maxConns int, logger *logrus.Logger) (*SQL
 	}
 
 	logger.WithFields(logrus.Fields{
-		"protocol":   protocol,
-		"max_conns":  maxConns,
-		"max_idle":   pool.maxIdle,
-		"driver":     driver,
+		"protocol":  protocol,
+		"max_conns": maxConns,
+		"max_idle":  pool.maxIdle,
+		"driver":    driver,
 	}).Info("SQL connection pool created")
 
 	return pool, nil

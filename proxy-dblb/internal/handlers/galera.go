@@ -276,15 +276,15 @@ func (h *GaleraHandler) GetStats() map[string]interface{} {
 	nodeStats := make(map[string]interface{})
 	for key, node := range h.nodeInfo {
 		nodeStats[key] = map[string]interface{}{
-			"state":                node.State.String(),
-			"ready":                node.Ready,
-			"cluster_size":         node.ClusterSize,
-			"cluster_status":       node.ClusterStatus,
-			"flow_control_paused":  node.FlowControlPaused,
-			"consecutive_errors":   node.ConsecutiveErrors,
-			"last_health_check":    node.LastHealthCheck,
-			"can_serve_reads":      node.CanServeReads(),
-			"can_serve_writes":     node.CanServeWrites(),
+			"state":               node.State.String(),
+			"ready":               node.Ready,
+			"cluster_size":        node.ClusterSize,
+			"cluster_status":      node.ClusterStatus,
+			"flow_control_paused": node.FlowControlPaused,
+			"consecutive_errors":  node.ConsecutiveErrors,
+			"last_health_check":   node.LastHealthCheck,
+			"can_serve_reads":     node.CanServeReads(),
+			"can_serve_writes":    node.CanServeWrites(),
 		}
 	}
 
@@ -547,12 +547,12 @@ func (h *GaleraHandler) updateNodeInfo(key string, node *GaleraNodeInfo, statusM
 	node.LastHealthCheck = time.Now()
 
 	h.logger.WithFields(logrus.Fields{
-		"node":                 key,
-		"state":                node.State.String(),
-		"ready":                node.Ready,
-		"flow_control_paused":  node.FlowControlPaused,
-		"cluster_size":         node.ClusterSize,
-		"cluster_status":       node.ClusterStatus,
+		"node":                key,
+		"state":               node.State.String(),
+		"ready":               node.Ready,
+		"flow_control_paused": node.FlowControlPaused,
+		"cluster_size":        node.ClusterSize,
+		"cluster_status":      node.ClusterStatus,
 	}).Debug("Updated Galera node info")
 
 	// Update metrics
@@ -850,10 +850,10 @@ func (h *GaleraHandler) performHandshake(conn net.Conn) (string, string, error) 
 	// Send OK packet
 	okPacket := []byte{
 		0x07, 0x00, 0x00, 0x02, // Packet header
-		0x00,                   // OK
-		0x00, 0x00,             // Affected rows, last insert id
-		0x02, 0x00,             // Status flags
-		0x00, 0x00,             // Warnings
+		0x00,       // OK
+		0x00, 0x00, // Affected rows, last insert id
+		0x02, 0x00, // Status flags
+		0x00, 0x00, // Warnings
 	}
 	conn.Write(okPacket)
 
@@ -863,8 +863,8 @@ func (h *GaleraHandler) performHandshake(conn net.Conn) (string, string, error) 
 // sendError sends an MySQL error packet to the client
 func (h *GaleraHandler) sendError(conn net.Conn, message string) {
 	errorPacket := []byte{
-		0xff,                         // ERR packet
-		0x48, 0x04,                   // Error code 1128
+		0xff,       // ERR packet
+		0x48, 0x04, // Error code 1128
 		0x23, 0x48, 0x59, 0x30, 0x30, 0x30, // SQL state marker + "HY000"
 	}
 	errorPacket = append(errorPacket, []byte(message)...)

@@ -23,16 +23,16 @@ import (
 
 // SQLiteConfig contains SQLite-specific configuration
 type SQLiteConfig struct {
-	Path           string `json:"path" yaml:"path"`                         // Database file path or :memory:
-	Name           string `json:"name" yaml:"name"`                         // Logical database name
-	ReadOnly       bool   `json:"read_only" yaml:"read_only"`               // Open in read-only mode
-	WALMode        bool   `json:"wal_mode" yaml:"wal_mode"`                 // Enable Write-Ahead Logging
-	BusyTimeout    int    `json:"busy_timeout" yaml:"busy_timeout"`         // Busy timeout in milliseconds
-	CacheSize      int    `json:"cache_size" yaml:"cache_size"`             // Page cache size in KB
-	JournalMode    string `json:"journal_mode" yaml:"journal_mode"`         // Journal mode (DELETE, TRUNCATE, PERSIST, MEMORY, WAL, OFF)
-	Synchronous    string `json:"synchronous" yaml:"synchronous"`           // Synchronous mode (OFF, NORMAL, FULL, EXTRA)
-	ForeignKeys    bool   `json:"foreign_keys" yaml:"foreign_keys"`         // Enable foreign key constraints
-	MaxConnections int    `json:"max_connections" yaml:"max_connections"`   // Maximum concurrent connections
+	Path           string `json:"path" yaml:"path"`                       // Database file path or :memory:
+	Name           string `json:"name" yaml:"name"`                       // Logical database name
+	ReadOnly       bool   `json:"read_only" yaml:"read_only"`             // Open in read-only mode
+	WALMode        bool   `json:"wal_mode" yaml:"wal_mode"`               // Enable Write-Ahead Logging
+	BusyTimeout    int    `json:"busy_timeout" yaml:"busy_timeout"`       // Busy timeout in milliseconds
+	CacheSize      int    `json:"cache_size" yaml:"cache_size"`           // Page cache size in KB
+	JournalMode    string `json:"journal_mode" yaml:"journal_mode"`       // Journal mode (DELETE, TRUNCATE, PERSIST, MEMORY, WAL, OFF)
+	Synchronous    string `json:"synchronous" yaml:"synchronous"`         // Synchronous mode (OFF, NORMAL, FULL, EXTRA)
+	ForeignKeys    bool   `json:"foreign_keys" yaml:"foreign_keys"`       // Enable foreign key constraints
+	MaxConnections int    `json:"max_connections" yaml:"max_connections"` // Maximum concurrent connections
 }
 
 // SQLiteDatabase represents a single SQLite database instance
@@ -168,12 +168,12 @@ func (h *SQLiteHandler) getDatabaseStats() map[string]interface{} {
 	for name, db := range h.databases {
 		db.mu.RLock()
 		stats[name] = map[string]interface{}{
-			"path":         db.config.Path,
-			"read_only":    db.config.ReadOnly,
-			"wal_mode":     db.config.WALMode,
-			"query_count":  db.queryCount,
-			"error_count":  db.errorCount,
-			"last_access":  db.lastAccess,
+			"path":        db.config.Path,
+			"read_only":   db.config.ReadOnly,
+			"wal_mode":    db.config.WALMode,
+			"query_count": db.queryCount,
+			"error_count": db.errorCount,
+			"last_access": db.lastAccess,
 		}
 		db.mu.RUnlock()
 	}

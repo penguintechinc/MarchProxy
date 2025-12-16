@@ -33,14 +33,14 @@ type PostgreSQLHandler struct {
 	mu              sync.RWMutex
 
 	// Statistics
-	activeConns   int64
-	totalConns    int64
-	totalQueries  int64
-	writeQueries  int64
-	readQueries   int64
+	activeConns    int64
+	totalConns     int64
+	totalQueries   int64
+	writeQueries   int64
+	readQueries    int64
 	blockedQueries int64
-	authFailures  int64
-	authSuccesses int64
+	authFailures   int64
+	authSuccesses  int64
 
 	// Round-robin for backend selection
 	roundRobin uint64

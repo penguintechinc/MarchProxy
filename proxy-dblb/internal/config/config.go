@@ -51,19 +51,19 @@ type Config struct {
 
 // RouteConfig defines a database route configuration
 type RouteConfig struct {
-	Name            string  `mapstructure:"name"`
-	Protocol        string  `mapstructure:"protocol"` // mysql, postgresql, mongodb, redis, mssql
-	ListenPort      int     `mapstructure:"listen_port"`
-	BackendHost     string  `mapstructure:"backend_host"`
-	BackendPort     int     `mapstructure:"backend_port"`
-	MaxConnections  int     `mapstructure:"max_connections"`
-	ConnectionRate  float64 `mapstructure:"connection_rate"`  // connections per second
-	QueryRate       float64 `mapstructure:"query_rate"`       // queries per second
-	EnableAuth      bool    `mapstructure:"enable_auth"`
-	Username        string  `mapstructure:"username"`
-	Password        string  `mapstructure:"password"`
-	EnableSSL       bool    `mapstructure:"enable_ssl"`
-	HealthCheckSQL  string  `mapstructure:"health_check_sql"`
+	Name           string  `mapstructure:"name"`
+	Protocol       string  `mapstructure:"protocol"` // mysql, postgresql, mongodb, redis, mssql
+	ListenPort     int     `mapstructure:"listen_port"`
+	BackendHost    string  `mapstructure:"backend_host"`
+	BackendPort    int     `mapstructure:"backend_port"`
+	MaxConnections int     `mapstructure:"max_connections"`
+	ConnectionRate float64 `mapstructure:"connection_rate"` // connections per second
+	QueryRate      float64 `mapstructure:"query_rate"`      // queries per second
+	EnableAuth     bool    `mapstructure:"enable_auth"`
+	Username       string  `mapstructure:"username"`
+	Password       string  `mapstructure:"password"`
+	EnableSSL      bool    `mapstructure:"enable_ssl"`
+	HealthCheckSQL string  `mapstructure:"health_check_sql"`
 }
 
 // Load loads configuration from file and environment variables

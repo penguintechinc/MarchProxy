@@ -15,12 +15,12 @@ import (
 type ProcessStatus string
 
 const (
-	StatusIdle       ProcessStatus = "idle"
-	StatusStarting   ProcessStatus = "starting"
-	StatusRunning    ProcessStatus = "running"
-	StatusStopping   ProcessStatus = "stopping"
-	StatusStopped    ProcessStatus = "stopped"
-	StatusError      ProcessStatus = "error"
+	StatusIdle     ProcessStatus = "idle"
+	StatusStarting ProcessStatus = "starting"
+	StatusRunning  ProcessStatus = "running"
+	StatusStopping ProcessStatus = "stopping"
+	StatusStopped  ProcessStatus = "stopped"
+	StatusError    ProcessStatus = "error"
 )
 
 // Process represents a running FFmpeg process

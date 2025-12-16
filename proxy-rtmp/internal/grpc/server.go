@@ -85,13 +85,13 @@ func (s *Server) GetStatus(ctx context.Context) (map[string]interface{}, error) 
 	processes := s.ffmpegManager.GetAllProcesses()
 
 	status := map[string]interface{}{
-		"module":         "rtmp",
-		"version":        "1.0.0",
-		"status":         "running",
-		"uptime":         time.Since(time.Now()).String(), // TODO: track actual start time
-		"rtmp_stats":     rtmpStats,
-		"ffmpeg_stats":   ffmpegStats,
-		"active_sessions": len(sessions),
+		"module":           "rtmp",
+		"version":          "1.0.0",
+		"status":           "running",
+		"uptime":           time.Since(time.Now()).String(), // TODO: track actual start time
+		"rtmp_stats":       rtmpStats,
+		"ffmpeg_stats":     ffmpegStats,
+		"active_sessions":  len(sessions),
 		"active_processes": len(processes),
 	}
 
@@ -133,8 +133,8 @@ func (s *Server) GetMetrics(ctx context.Context) (map[string]interface{}, error)
 	}
 
 	metrics := map[string]interface{}{
-		"rtmp": rtmpStats,
-		"ffmpeg": ffmpegStats,
+		"rtmp":            rtmpStats,
+		"ffmpeg":          ffmpegStats,
 		"total_bytes_in":  totalBytesIn,
 		"total_bytes_out": totalBytesOut,
 		"sessions_count":  len(sessions),

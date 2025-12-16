@@ -49,18 +49,18 @@ type RedisClusterHandler struct {
 
 // RedisNode represents a node in the Redis cluster
 type RedisNode struct {
-	ID          string          `json:"id"`
-	Host        string          `json:"host"`
-	Port        int             `json:"port"`
-	Master      bool            `json:"master"`
-	Slots       []SlotRange     `json:"slots"`
-	Replicas    []*RedisNode    `json:"replicas"`
-	Client      *redis.Client   `json:"-"`
-	LastSeen    time.Time       `json:"last_seen"`
-	Healthy     bool            `json:"healthy"`
-	Latency     time.Duration   `json:"latency"`
-	Connections int32           `json:"connections"`
-	QPS         uint64          `json:"qps"`
+	ID          string        `json:"id"`
+	Host        string        `json:"host"`
+	Port        int           `json:"port"`
+	Master      bool          `json:"master"`
+	Slots       []SlotRange   `json:"slots"`
+	Replicas    []*RedisNode  `json:"replicas"`
+	Client      *redis.Client `json:"-"`
+	LastSeen    time.Time     `json:"last_seen"`
+	Healthy     bool          `json:"healthy"`
+	Latency     time.Duration `json:"latency"`
+	Connections int32         `json:"connections"`
+	QPS         uint64        `json:"qps"`
 }
 
 // SlotRange represents a range of hash slots
@@ -71,17 +71,17 @@ type SlotRange struct {
 
 // RedisClusterStats tracks cluster-wide statistics
 type RedisClusterStats struct {
-	TotalNodes       int                   `json:"total_nodes"`
-	MasterNodes      int                   `json:"master_nodes"`
-	ReplicaNodes     int                   `json:"replica_nodes"`
-	HealthyNodes     int                   `json:"healthy_nodes"`
-	TotalRequests    uint64                `json:"total_requests"`
-	RedirectedMoved  uint64                `json:"redirected_moved"`
-	RedirectedAsk    uint64                `json:"redirected_ask"`
-	ClusterErrors    uint64                `json:"cluster_errors"`
-	NodeStats        map[string]*NodeStats `json:"node_stats"`
-	AvgLatency       time.Duration         `json:"avg_latency"`
-	LastRefresh      time.Time             `json:"last_refresh"`
+	TotalNodes      int                   `json:"total_nodes"`
+	MasterNodes     int                   `json:"master_nodes"`
+	ReplicaNodes    int                   `json:"replica_nodes"`
+	HealthyNodes    int                   `json:"healthy_nodes"`
+	TotalRequests   uint64                `json:"total_requests"`
+	RedirectedMoved uint64                `json:"redirected_moved"`
+	RedirectedAsk   uint64                `json:"redirected_ask"`
+	ClusterErrors   uint64                `json:"cluster_errors"`
+	NodeStats       map[string]*NodeStats `json:"node_stats"`
+	AvgLatency      time.Duration         `json:"avg_latency"`
+	LastRefresh     time.Time             `json:"last_refresh"`
 }
 
 // NodeStats tracks per-node statistics

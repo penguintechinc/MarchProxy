@@ -17,12 +17,12 @@ import (
 
 // ThreatIntelConfig configures the threat intelligence engine
 type ThreatIntelConfig struct {
-	Enabled            bool              `json:"enabled" yaml:"enabled"`
-	UpdateInterval     time.Duration     `json:"update_interval" yaml:"update_interval"`
-	MaxConcurrentFeeds int               `json:"max_concurrent_feeds" yaml:"max_concurrent_feeds"`
-	Feeds              map[string]*Feed  `json:"feeds" yaml:"feeds"`
-	AutoBlock          AutoBlockConfig   `json:"auto_block" yaml:"auto_block"`
-	RetentionDays      int               `json:"retention_days" yaml:"retention_days"`
+	Enabled            bool             `json:"enabled" yaml:"enabled"`
+	UpdateInterval     time.Duration    `json:"update_interval" yaml:"update_interval"`
+	MaxConcurrentFeeds int              `json:"max_concurrent_feeds" yaml:"max_concurrent_feeds"`
+	Feeds              map[string]*Feed `json:"feeds" yaml:"feeds"`
+	AutoBlock          AutoBlockConfig  `json:"auto_block" yaml:"auto_block"`
+	RetentionDays      int              `json:"retention_days" yaml:"retention_days"`
 }
 
 // Feed represents a threat intelligence feed
@@ -66,17 +66,17 @@ type ThreatIndicator struct {
 
 // ThreatIntelligenceEngine manages threat feeds and indicators
 type ThreatIntelligenceEngine struct {
-	config      *ThreatIntelConfig
-	redis       *redis.Client
-	logger      *logrus.Logger
-	indicators  map[string]*ThreatIndicator
-	ipThreats   map[string]*ThreatIndicator
+	config        *ThreatIntelConfig
+	redis         *redis.Client
+	logger        *logrus.Logger
+	indicators    map[string]*ThreatIndicator
+	ipThreats     map[string]*ThreatIndicator
 	domainThreats map[string]*ThreatIndicator
-	feedStats   map[string]*FeedStats
-	httpClient  *http.Client
-	mu          sync.RWMutex
-	ctx         context.Context
-	cancel      context.CancelFunc
+	feedStats     map[string]*FeedStats
+	httpClient    *http.Client
+	mu            sync.RWMutex
+	ctx           context.Context
+	cancel        context.CancelFunc
 }
 
 // FeedStats tracks feed update statistics

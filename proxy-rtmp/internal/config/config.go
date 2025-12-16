@@ -33,9 +33,9 @@ type Config struct {
 	EncoderParams map[string]string `mapstructure:"encoder-params"`
 
 	// Rate limiting (per route)
-	MaxBitrate    int `mapstructure:"max-bitrate"`     // Mbps
-	MaxStreams    int `mapstructure:"max-streams"`     // concurrent streams
-	MaxResolution int `mapstructure:"max-resolution"`  // height in pixels
+	MaxBitrate    int `mapstructure:"max-bitrate"`    // Mbps
+	MaxStreams    int `mapstructure:"max-streams"`    // concurrent streams
+	MaxResolution int `mapstructure:"max-resolution"` // height in pixels
 
 	// Health check
 	HealthCheckInterval int `mapstructure:"health-check-interval"` // seconds
@@ -56,9 +56,9 @@ func Load(cfgFile string) (*Config, error) {
 	viper.SetDefault("segment-duration", 6)
 	viper.SetDefault("ffmpeg-path", "ffmpeg")
 	viper.SetDefault("ffprobe-path", "ffprobe")
-	viper.SetDefault("max-bitrate", 10)         // 10 Mbps default
-	viper.SetDefault("max-streams", 100)        // 100 concurrent streams
-	viper.SetDefault("max-resolution", 1080)    // 1080p max
+	viper.SetDefault("max-bitrate", 10)      // 10 Mbps default
+	viper.SetDefault("max-streams", 100)     // 100 concurrent streams
+	viper.SetDefault("max-resolution", 1080) // 1080p max
 	viper.SetDefault("health-check-interval", 30)
 
 	// Load config file if specified

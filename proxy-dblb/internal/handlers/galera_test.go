@@ -87,11 +87,11 @@ func TestGaleraNodeStates(t *testing.T) {
 // TestGaleraNodeHealth tests node health checking logic
 func TestGaleraNodeHealth(t *testing.T) {
 	tests := []struct {
-		name      string
-		node      *GaleraNodeInfo
-		healthy   bool
-		canRead   bool
-		canWrite  bool
+		name     string
+		node     *GaleraNodeInfo
+		healthy  bool
+		canRead  bool
+		canWrite bool
 	}{
 		{
 			name: "Healthy synced node",
@@ -191,8 +191,8 @@ func TestIsWriteQuery(t *testing.T) {
 	handler := NewGaleraHandler("galera", 3306, nil, secChecker, cfg, logger)
 
 	tests := []struct {
-		query    string
-		isWrite  bool
+		query   string
+		isWrite bool
 	}{
 		{"SELECT * FROM users", false},
 		{"select id from orders", false},

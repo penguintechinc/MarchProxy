@@ -181,8 +181,8 @@ func TestBuildDSN(t *testing.T) {
 	handler := NewSQLiteHandler(5432, p, secChecker, cfg, logger)
 
 	tests := []struct {
-		name       string
-		config     SQLiteConfig
+		name        string
+		config      SQLiteConfig
 		shouldMatch string
 	}{
 		{
@@ -318,9 +318,9 @@ func TestSQLiteIsWriteQuery(t *testing.T) {
 	handler := NewSQLiteHandler(5432, p, secChecker, cfg, logger)
 
 	tests := []struct {
-		name     string
-		query    string
-		isWrite  bool
+		name    string
+		query   string
+		isWrite bool
 	}{
 		{
 			name:    "SELECT query",

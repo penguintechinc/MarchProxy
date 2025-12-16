@@ -33,10 +33,10 @@ func NewX264Config(preset string) *EncoderConfig {
 		HWAccel: "",
 		Preset:  preset,
 		Params: map[string]string{
-			"tune":    "zerolatency",
-			"profile": "high",
-			"level":   "4.1",
-			"g":       "60", // GOP size (2 seconds at 30fps)
+			"tune":         "zerolatency",
+			"profile":      "high",
+			"level":        "4.1",
+			"g":            "60", // GOP size (2 seconds at 30fps)
 			"sc_threshold": "0",
 			"flags":        "+cgop", // Closed GOP
 		},

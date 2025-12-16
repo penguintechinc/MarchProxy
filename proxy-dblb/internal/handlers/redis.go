@@ -361,20 +361,20 @@ func (h *RedisHandler) isBlockedRedisCommand(cmd RedisCommand) bool {
 	// Block dangerous Redis commands that could compromise server
 	dangerousCommands := map[string]bool{
 		// System/server management
-		"FLUSHDB":   true,
-		"FLUSHALL":  true,
-		"SHUTDOWN":  true,
-		"DEBUG":     true,
-		"CONFIG":    true,
-		"SAVE":      true,
-		"BGSAVE":    true,
+		"FLUSHDB":      true,
+		"FLUSHALL":     true,
+		"SHUTDOWN":     true,
+		"DEBUG":        true,
+		"CONFIG":       true,
+		"SAVE":         true,
+		"BGSAVE":       true,
 		"BGREWRITEAOF": true,
 
 		// Replication
-		"SYNC":     true,
-		"PSYNC":    true,
-		"REPLCONF": true,
-		"SLAVEOF":  true,
+		"SYNC":      true,
+		"PSYNC":     true,
+		"REPLCONF":  true,
+		"SLAVEOF":   true,
 		"REPLICAOF": true,
 
 		// Monitoring (can leak sensitive info)
