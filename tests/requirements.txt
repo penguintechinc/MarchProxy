@@ -11,7 +11,7 @@ pytest-html==4.1.1
 
 # HTTP Testing
 httpx==0.26.0
-requests==2.31.0
+requests==2.32.4
 
 # Database Testing
 pytest-postgresql==5.0.0
