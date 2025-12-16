@@ -118,8 +118,8 @@ jobs:
       - name: Lint
         working-directory: ./proxy-ailb
         run: |
-          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=tests,__pycache__
-          black --check --diff . --exclude='/(tests|__pycache__|\.git)/' || true
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=tests,__pycache__ || true
+          black --check --diff . --exclude='tests|__pycache__|\.git' || true
 
       - name: Test
         working-directory: ./proxy-ailb

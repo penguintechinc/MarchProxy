@@ -1,6 +1,6 @@
 module github.com/PenguinTech/MarchProxy/proxy-alb
 
-go 1.23.12
+go 1.24
 
 require (
 	github.com/PenguinTech/MarchProxy/proto v0.0.0
