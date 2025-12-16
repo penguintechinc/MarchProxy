@@ -3,7 +3,6 @@ package metrics
 import (
 	"context"
 	"net/http"
-	"strconv"
 	"sync"
 	"time"
 

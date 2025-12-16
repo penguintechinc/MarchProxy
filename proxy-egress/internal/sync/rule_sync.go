@@ -117,7 +117,14 @@ func (rs *RuleSynchronizer) syncLoop() {
 // syncRules fetches configuration from manager and updates XDP rules
 func (rs *RuleSynchronizer) syncRules() error {
 	// Fetch configuration from manager
-	config, err := rs.managerClient.GetConfiguration()
+	// TODO: Implement GetConfiguration method in manager.Client
+	// config, err := rs.managerClient.GetConfiguration()
+	// if err != nil {
+	// 	return fmt.Errorf("failed to fetch configuration: %w", err)
+	// }
+
+	// Temporary stub - use GetConfig instead
+	config, err := rs.managerClient.GetConfig()
 	if err != nil {
 		return fmt.Errorf("failed to fetch configuration: %w", err)
 	}

@@ -2,6 +2,7 @@ package config
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net"
 	"os"
@@ -280,13 +281,13 @@ func getEnvBool(key string, defaultValue bool) bool {
 	return defaultValue
 }
 
-func loadClientCAs(caPath string) (*tls.CertPool, error) {
+func loadClientCAs(caPath string) (*x509.CertPool, error) {
 	caCert, err := os.ReadFile(caPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read CA certificate: %w", err)
 	}
 
-	caCertPool := tls.NewCertPool()
+	caCertPool := x509.NewCertPool()
 	if !caCertPool.AppendCertsFromPEM(caCert) {
 		return nil, fmt.Errorf("failed to parse CA certificate")
 	}

@@ -3,7 +3,6 @@ package routing
 import (
 	"fmt"
 	"net/http"
-	"net/url"
 	"regexp"
 	"sort"
 	"strings"

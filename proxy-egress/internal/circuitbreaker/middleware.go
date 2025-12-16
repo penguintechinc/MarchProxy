@@ -89,7 +89,7 @@ func (cbm *CircuitBreakerMiddleware) ProcessError(err error, ctx *middleware.Mid
 		return err
 	}
 
-	breaker, ok := ctx.GetData("circuit_breaker").(*CircuitBreaker)
+	_, ok := ctx.GetData("circuit_breaker").(*CircuitBreaker)
 	if !ok {
 		return err
 	}

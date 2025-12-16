@@ -41,7 +41,7 @@ func (rl *XDPRateLimiter) DetachFromInterface(interfaceName string) error {
 }
 
 // UpdateConfig is a no-op in fallback mode
-func (rl *XDPRateLimiter) UpdateConfig(config *RateLimitConfig) error {
+func (rl *XDPRateLimiter) UpdateConfig(config *RateLimiterConfig) error {
 	rl.logger.Warn("XDP rate limiting not available, configuration ignored")
 	return nil
 }
@@ -52,12 +52,12 @@ func (rl *XDPRateLimiter) SetEnterpriseLicense(enabled bool) error {
 }
 
 // GetStats returns empty stats in fallback mode
-func (rl *XDPRateLimiter) GetStats() (*RateLimitStats, error) {
-	return &RateLimitStats{}, nil
+func (rl *XDPRateLimiter) GetStats() (*RateLimitMetrics, error) {
+	return &RateLimitMetrics{}, nil
 }
 
 // GetIPState returns nil in fallback mode
-func (rl *XDPRateLimiter) GetIPState(ip net.IP) (*IPRateState, error) {
+func (rl *XDPRateLimiter) GetIPState(ip net.IP) (*ClientLimiter, error) {
 	return nil, fmt.Errorf("XDP not supported in this build")
 }
 
@@ -82,6 +82,6 @@ func (rl *XDPRateLimiter) GetAttachedInterfaces() []string {
 }
 
 // GetConfig returns nil in fallback mode
-func (rl *XDPRateLimiter) GetConfig() *RateLimitConfig {
+func (rl *XDPRateLimiter) GetConfig() *RateLimiterConfig {
 	return nil
 }

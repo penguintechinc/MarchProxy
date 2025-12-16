@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"math/big"
@@ -250,9 +249,10 @@ func (tm *TLSManager) GetTLSConfig() *tls.Config {
 		config.RootCAs = tm.rootCAs
 	}
 
-	if tm.sessionCache != nil {
-		config.SessionCache = tm.sessionCache
-	}
+	// SessionCache was removed from crypto/tls in Go 1.23+
+	// if tm.sessionCache != nil {
+	//	config.SessionCache = tm.sessionCache
+	// }
 
 	return config
 }

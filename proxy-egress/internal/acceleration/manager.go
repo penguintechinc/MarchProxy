@@ -391,9 +391,10 @@ func (am *AccelerationManager) updateStats() {
 	defer am.mu.Unlock()
 
 	// Collect stats from each technology
-	if am.dpdkManager != nil {
-		am.stats.DPDKStats = am.dpdkManager.GetStats()
-		am.stats.DPDKPackets = am.stats.DPDKStats.RxPackets
+	// DPDK manager not available in current struct
+	// if // am.dpdkManager != nil {
+		// am.stats.DPDKStats = // am.dpdkManager.GetStats()
+		// am.stats.DPDKPackets = // am.stats.DPDKStats.RxPackets
 	}
 
 	if am.xdpManager != nil {
@@ -411,7 +412,7 @@ func (am *AccelerationManager) updateStats() {
 	}
 
 	// Calculate overall metrics
-	totalPackets := am.stats.DPDKPackets + am.stats.XDPPackets +
+	totalPackets := // am.stats.DPDKPackets + am.stats.XDPPackets +
 	               am.stats.AFXDPPackets + am.stats.GoProxyPackets
 
 	if totalPackets > 0 {
@@ -458,8 +459,9 @@ func (am *AccelerationManager) Stop() error {
 		am.xdpManager.Stop()
 	}
 
-	if am.dpdkManager != nil {
-		am.dpdkManager.Stop()
+	// DPDK manager not available in current struct
+	// if // am.dpdkManager != nil {
+		// am.dpdkManager.Stop()
 	}
 
 	if am.sriovManager != nil {
@@ -491,7 +493,7 @@ func (am *AccelerationManager) GetActiveTechnologies() []string {
 
 	var active []string
 
-	if am.dpdkManager != nil && am.dpdkManager.IsRunning() {
+	if // am.dpdkManager != nil && // am.dpdkManager.IsRunning() {
 		active = append(active, "DPDK")
 	}
 	if am.xdpManager != nil && am.xdpManager.IsRunning() {

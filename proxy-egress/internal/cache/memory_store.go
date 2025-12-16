@@ -328,7 +328,7 @@ func (bc *BackgroundCleaner) checkTTL() {
 	bc.store.mutex.Lock()
 	defer bc.store.mutex.Unlock()
 
-	now := time.Now()
+	_ = time.Now()
 	var expiredKeys []string
 
 	for key, entry := range bc.store.data {

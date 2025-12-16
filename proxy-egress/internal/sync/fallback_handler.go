@@ -337,13 +337,13 @@ func (fh *FallbackHandler) isWebSocketUpgrade(packet *PacketInfo) bool {
 }
 
 func (fh *FallbackHandler) selectDestination(mapping *manager.Mapping) (*ForwardingDestination, error) {
-	if len(mapping.DestinationServices) == 0 {
+	if len(mapping.DestServices) == 0 {
 		return nil, fmt.Errorf("no destination services configured")
 	}
 
 	// Simple round-robin selection for now
 	// In production, this would implement proper load balancing
-	serviceID := mapping.DestinationServices[0]
+	_ = mapping.DestServices[0]
 
 	// Look up service details from manager
 	// For now, return a placeholder

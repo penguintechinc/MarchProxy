@@ -1,7 +1,6 @@
 package quic
 
 import (
-	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -16,8 +15,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"marchproxy-egress/internal/manager"
 )
 
 // QUICServer handles QUIC/HTTP3 connections and multiplexing
@@ -900,8 +897,7 @@ func (qs *QUICServer) GetConnections() map[string]*QUICConnection {
 
 	connections := make(map[string]*QUICConnection)
 	for id, conn := range qs.connections {
-		connCopy := *conn
-		connections[id] = &connCopy
+		connections[id] = conn
 	}
 	return connections
 }

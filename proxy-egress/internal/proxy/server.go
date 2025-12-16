@@ -208,13 +208,13 @@ func (s *Server) acceptConnections(ctx context.Context) {
 // handleConnection processes a single client connection
 func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
-	
+
 	startTime := time.Now()
 	remoteAddr := conn.RemoteAddr().String()
 	localAddr := conn.LocalAddr().String()
-	
+
 	s.logger.Debug("Handling connection", "remote_addr", remoteAddr)
-	
+
 	// TODO: Implement actual proxy logic here
 	// This would include:
 	// - Protocol detection (HTTP, HTTPS, TCP, etc.)
@@ -222,7 +222,7 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 	// - Load balancing and backend selection
 	// - Traffic forwarding and filtering
 	// - eBPF acceleration hooks
-	
+
 	// For now, just implement a simple echo server as a placeholder
 	buffer := make([]byte, 1024)
 	for {
@@ -234,7 +234,7 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 		default:
 			// Set read timeout
 			conn.SetReadDeadline(time.Now().Add(30 * time.Second))
-			
+
 			n, err := conn.Read(buffer)
 			if err != nil {
 				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
@@ -243,16 +243,16 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 				s.logger.Debug("Connection read error", "error", err, "remote_addr", remoteAddr)
 				break
 			}
-			
+
 			if n == 0 {
 				break
 			}
-			
+
 			// Record bytes transferred
 			if s.monitor != nil {
 				s.monitor.RecordBytesTransferred("inbound", "tcp", int64(n))
 			}
-			
+
 			// Echo back (placeholder for actual proxy logic)
 			conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
 			written, err := conn.Write(buffer[:n])
@@ -260,20 +260,23 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 				s.logger.Debug("Connection write error", "error", err, "remote_addr", remoteAddr)
 				break
 			}
-			
+
 			// Record bytes transferred
 			if s.monitor != nil {
 				s.monitor.RecordBytesTransferred("outbound", "tcp", int64(written))
 			}
 		}
+
+		break // Exit loop after handling one read/write cycle or error
 	}
-	
+
+	// Calculate duration after loop exits
 	duration := time.Since(startTime)
-	s.logger.Debug("Connection closed", 
+	s.logger.Debug("Connection closed",
 		"remote_addr", remoteAddr,
 		"duration", duration.String(),
 	)
-	
+
 	// Record connection closure in metrics
 	if s.monitor != nil {
 		s.monitor.RecordConnectionClosed("tcp", remoteAddr, localAddr, duration)

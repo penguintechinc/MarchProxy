@@ -251,7 +251,8 @@ func (hc *HealthChecker) AddService(service *manager.Service) {
 	hc.mutex.Lock()
 	defer hc.mutex.Unlock()
 
-	key := fmt.Sprintf("%s:%d", service.Host, service.Port)
+	// Service struct uses IPFQDN field instead of separate Host/Port
+	key := service.IPFQDN  // Format: "host:port"
 	hc.services[key] = &ServiceHealth{
 		Service:   service,
 		Status:    StatusUnknown,
@@ -264,7 +265,8 @@ func (hc *HealthChecker) RemoveService(service *manager.Service) {
 	hc.mutex.Lock()
 	defer hc.mutex.Unlock()
 
-	key := fmt.Sprintf("%s:%d", service.Host, service.Port)
+	// Service struct uses IPFQDN field instead of separate Host/Port
+	key := service.IPFQDN  // Format: "host:port"
 	delete(hc.services, key)
 }
 
@@ -272,7 +274,8 @@ func (hc *HealthChecker) GetServiceHealth(service *manager.Service) *ServiceHeal
 	hc.mutex.RLock()
 	defer hc.mutex.RUnlock()
 
-	key := fmt.Sprintf("%s:%d", service.Host, service.Port)
+	// Service struct uses IPFQDN field instead of separate Host/Port
+	key := service.IPFQDN  // Format: "host:port"
 	return hc.services[key]
 }
 
@@ -477,7 +480,7 @@ func (hc *HealthChecker) notifyStatusChange(serviceHealth *ServiceHealth, oldSta
 
 	go func() {
 		notification := map[string]interface{}{
-			"service":    fmt.Sprintf("%s:%d", serviceHealth.Service.Host, serviceHealth.Service.Port),
+			"service":    serviceHealth.Service.IPFQDN,  // Format: "host:port"
 			"old_status": oldStatus,
 			"new_status": newStatus,
 			"timestamp":  time.Now(),
@@ -633,7 +636,8 @@ func (hc *HTTPHealthCheck) Configure(config map[string]interface{}) error {
 }
 
 func (hc *HTTPHealthCheck) Check(ctx context.Context, service *manager.Service) *CheckResult {
-	url := fmt.Sprintf("%s://%s:%d%s", service.Scheme, service.Host, service.Port, hc.path)
+	// Service struct doesn't have Scheme field, defaulting to http
+	url := fmt.Sprintf("http://%s%s", service.IPFQDN, hc.path)
 	
 	req, err := http.NewRequestWithContext(ctx, hc.method, url, nil)
 	if err != nil {
@@ -716,7 +720,7 @@ func (tc *TCPHealthCheck) Configure(config map[string]interface{}) error {
 }
 
 func (tc *TCPHealthCheck) Check(ctx context.Context, service *manager.Service) *CheckResult {
-	address := fmt.Sprintf("%s:%d", service.Host, service.Port)
+	address := service.IPFQDN  // Format: "host:port"
 	
 	dialer := &net.Dialer{Timeout: tc.timeout}
 	start := time.Now()

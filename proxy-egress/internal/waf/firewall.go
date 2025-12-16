@@ -2,13 +2,10 @@ package waf
 
 import (
 	"bytes"
-	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"regexp"
 	"strings"
 	"sync"
@@ -610,7 +607,7 @@ func (waf *WAF) initializeDefaultRules() {
 	}
 
 	commandInjectionPatterns := []string{
-		`(?i)(\||;|&|>|<|\$\(|\`|\\n|\\r)`,
+		`(?i)(\||;|&|>|<|\$\(|` + "`" + `|\n|\r)`,  // Fixed: backtick and newline escapes
 		`(?i)(wget|curl|nc|netcat|telnet|ssh|ftp|scp|rsync)`,
 		`(?i)(bash|sh|cmd|powershell|python|perl|ruby|php)`,
 	}
@@ -720,7 +717,7 @@ func (ad *AnomalyDetector) IsAnomalous(req *http.Request, body []byte) bool {
 
 	score := 0
 
-	if float64(len(body)) > ad.baseline.AverageSize*3 {
+	if float64(len(body)) > float64(ad.baseline.AverageSize)*3.0 {
 		score += 2
 	}
 

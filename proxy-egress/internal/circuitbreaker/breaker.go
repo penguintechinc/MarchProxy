@@ -461,7 +461,7 @@ func NewServiceCircuitBreaker(config Config) *ServiceCircuitBreaker {
 }
 
 func (scb *ServiceCircuitBreaker) GetBreaker(service *manager.Service) *CircuitBreaker {
-	key := fmt.Sprintf("%s:%d", service.Host, service.Port)
+	key := service.IPFQDN
 	
 	scb.mutex.RLock()
 	breaker, exists := scb.breakers[key]
@@ -508,7 +508,7 @@ func (scb *ServiceCircuitBreaker) GetAllBreakers() map[string]*CircuitBreaker {
 }
 
 func (scb *ServiceCircuitBreaker) RemoveBreaker(service *manager.Service) {
-	key := fmt.Sprintf("%s:%d", service.Host, service.Port)
+	key := service.IPFQDN
 	
 	scb.mutex.Lock()
 	defer scb.mutex.Unlock()

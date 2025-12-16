@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,7 +20,7 @@ type AdminDashboard struct {
 	templates      *template.Template
 	healthChecker  *health.HealthChecker
 	metricsClient  *metrics.PrometheusMetrics
-	serviceManager *manager.Manager
+	serviceManager *manager.Client
 	websockets     map[string]*WebSocketConnection
 	mutex          sync.RWMutex
 	running        bool
@@ -192,7 +191,7 @@ const (
 	AlertStatusSuppressed AlertStatus = "suppressed"
 )
 
-func NewAdminDashboard(config DashboardConfig, healthChecker *health.HealthChecker, metricsClient *metrics.PrometheusMetrics, serviceManager *manager.Manager) *AdminDashboard {
+func NewAdminDashboard(config DashboardConfig, healthChecker *health.HealthChecker, metricsClient *metrics.PrometheusMetrics, serviceManager *manager.Client) *AdminDashboard {
 	if config.Port == 0 {
 		config.Port = 8080
 	}

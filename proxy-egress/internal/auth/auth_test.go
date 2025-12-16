@@ -1,10 +1,7 @@
 package auth
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
 	"testing"
 	"time"
 
@@ -269,14 +266,12 @@ func extractTokenFromHeader(authHeader string) (string, string, error) {
 	// Split by space to separate scheme and token
 	parts := make([]string, 0, 2)
 	current := ""
-	inToken := false
 
 	for _, char := range authHeader {
 		if char == ' ' {
 			if current != "" {
 				parts = append(parts, current)
 				current = ""
-				inToken = true
 			}
 		} else {
 			current += string(char)

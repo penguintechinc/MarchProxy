@@ -52,6 +52,19 @@ type MTLSMetrics struct {
 	mutex               sync.RWMutex
 }
 
+type MTLSMetricsSnapshot struct {
+	SuccessfulAuths     uint64
+	FailedAuths         uint64
+	ExpiredCerts        uint64
+	RevokedCerts        uint64
+	InvalidCerts        uint64
+	ClientCertMissing   uint64
+	CAValidationErrors  uint64
+	CertChainTooLong    uint64
+	CustomValidationErr uint64
+	AverageLatency      time.Duration
+}
+
 type ClientCertInfo struct {
 	Subject            string
 	Issuer             string
@@ -340,10 +353,21 @@ func (m *MTLSAuthenticator) Reload() error {
 	return nil
 }
 
-func (m *MTLSAuthenticator) GetMetrics() MTLSMetrics {
+func (m *MTLSAuthenticator) GetMetrics() MTLSMetricsSnapshot {
 	m.metrics.mutex.RLock()
 	defer m.metrics.mutex.RUnlock()
-	return *m.metrics
+	return MTLSMetricsSnapshot{
+		SuccessfulAuths:     m.metrics.SuccessfulAuths,
+		FailedAuths:         m.metrics.FailedAuths,
+		ExpiredCerts:        m.metrics.ExpiredCerts,
+		RevokedCerts:        m.metrics.RevokedCerts,
+		InvalidCerts:        m.metrics.InvalidCerts,
+		ClientCertMissing:   m.metrics.ClientCertMissing,
+		CAValidationErrors:  m.metrics.CAValidationErrors,
+		CertChainTooLong:    m.metrics.CertChainTooLong,
+		CustomValidationErr: m.metrics.CustomValidationErr,
+		AverageLatency:      m.metrics.AverageLatency,
+	}
 }
 
 func (m *MTLSAuthenticator) updateMetrics(start time.Time) {

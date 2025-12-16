@@ -1,9 +1,7 @@
 package ratelimit
 
 import (
-	"context"
 	"errors"
-	"fmt"
 	"net"
 	"net/http"
 	"strconv"

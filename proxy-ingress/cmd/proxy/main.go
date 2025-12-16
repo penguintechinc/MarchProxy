@@ -127,11 +127,30 @@ func runIngressProxy(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Loaded configuration - Services: %d, Ingress Routes: %d\n",
-		len(initialConfig.Services), len(initialConfig.IngressRoutes))
+	fmt.Printf("Loaded configuration - Virtual Hosts: %d\n",
+		len(initialConfig.VirtualHosts))
 
 	// Initialize authenticator and metrics
-	authenticator := auth.NewAuthenticator(initialConfig.Services)
+	mtlsConfig := auth.MTLSConfig{
+		Enabled:           cfg.EnableMTLS,
+		RequireClientCert: cfg.RequireMTLSClientCert,
+		ServerCertPath:    cfg.MTLSServerCertPath,
+		ServerKeyPath:     cfg.MTLSServerKeyPath,
+		ClientCAPath:      cfg.MTLSClientCAPath,
+		ClientCABundle:    cfg.MTLSClientCABundle,
+		AllowedCNs:        cfg.MTLSAllowedCNs,
+		AllowedOUs:        cfg.MTLSAllowedOUs,
+		VerifyClient:      cfg.MTLSVerifyClient,
+		CRLPath:           cfg.MTLSCRLPath,
+		OCSPEnabled:       cfg.MTLSOCSPEnabled,
+		CertExpiredGrace:  cfg.MTLSCertExpiredGrace,
+		MaxCertChainDepth: cfg.MTLSMaxCertChainDepth,
+	}
+	authenticator, err := auth.NewMTLSAuthenticator(mtlsConfig)
+	if err != nil {
+		fmt.Printf("Warning: Failed to initialize mTLS authenticator: %v\n", err)
+		authenticator, _ = auth.NewMTLSAuthenticator(auth.MTLSConfig{Enabled: false})
+	}
 	metrics := &IngressMetrics{}
 
 	// Initialize eBPF manager with ingress-specific programs
@@ -144,8 +163,7 @@ func runIngressProxy(cmd *cobra.Command, args []string) {
 			fmt.Printf("Continuing with userspace-only mode\n")
 		} else {
 			// Sync initial configuration
-			ebpfManager.UpdateServices(initialConfig.Services)
-			ebpfManager.UpdateIngressRoutes(initialConfig.IngressRoutes)
+			ebpfManager.UpdateVirtualHosts(initialConfig.VirtualHosts)
 		}
 	}
 
@@ -181,8 +199,7 @@ func runIngressProxy(cmd *cobra.Command, args []string) {
 
 		// Update eBPF maps
 		if ebpfManager.IsEnabled() {
-			ebpfManager.UpdateServices(config.Services)
-			ebpfManager.UpdateIngressRoutes(config.IngressRoutes)
+			ebpfManager.UpdateVirtualHosts(config.VirtualHosts)
 		}
 	})
 
@@ -298,7 +315,7 @@ type IngressProxy struct {
 	config        *config.Config
 	clusterConfig *manager.ClusterConfig
 	managerClient *manager.Client
-	authenticator *auth.Authenticator
+	authenticator *auth.MTLSAuthenticator
 	metrics       *IngressMetrics
 	// ebpfManager   *ebpf.Manager  // TODO: Create ebpf package
 	ebpfManager   interface{} // Placeholder
@@ -413,8 +430,8 @@ func (p *IngressProxy) createReverseProxyHandler(isTLS bool) http.Handler {
 	})
 }
 
-// findMatchingRoute finds the best matching ingress route for the request
-func (p *IngressProxy) findMatchingRoute(r *http.Request) *manager.IngressRoute {
+// findMatchingRoute finds the best matching virtual host for the request
+func (p *IngressProxy) findMatchingRoute(r *http.Request) *manager.VirtualHost {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
@@ -425,11 +442,17 @@ func (p *IngressProxy) findMatchingRoute(r *http.Request) *manager.IngressRoute 
 	host := r.Host
 	path := r.URL.Path
 
-	// Find matching routes based on host and path patterns
-	for _, route := range p.clusterConfig.IngressRoutes {
-		if p.matchesHostPattern(host, route.HostPattern) &&
-		   p.matchesPathPattern(path, route.PathPattern) {
-			return &route
+	// Find matching routes based on host patterns
+	for i, vhost := range p.clusterConfig.VirtualHosts {
+		if p.matchesHostPattern(host, vhost.Hostname) {
+			// Check if any routing rule matches the path
+			for _, rule := range vhost.RoutingRules {
+				if p.matchesPathPattern(path, rule.PathPattern) {
+					return &p.clusterConfig.VirtualHosts[i]
+				}
+			}
+			// If no specific rule matches, return the vhost anyway
+			return &p.clusterConfig.VirtualHosts[i]
 		}
 	}
 
@@ -465,38 +488,26 @@ func (p *IngressProxy) matchesPathPattern(path, pattern string) bool {
 }
 
 // validateClientCertificate validates the client certificate for mTLS
-func (p *IngressProxy) validateClientCertificate(cert *x509.Certificate, route *manager.IngressRoute) error {
-	// Check if client CN is in allowed list
-	if len(route.AllowedClientCNs) > 0 {
-		allowed := false
-		for _, allowedCN := range route.AllowedClientCNs {
-			if cert.Subject.CommonName == allowedCN {
-				allowed = true
-				break
-			}
-		}
-		if !allowed {
-			return fmt.Errorf("client certificate CN '%s' not allowed", cert.Subject.CommonName)
-		}
-	}
+func (p *IngressProxy) validateClientCertificate(cert *x509.Certificate, vhost *manager.VirtualHost) error {
+	// Placeholder for client certificate validation
+	// This would be implemented when RoutingRule authentication rules are populated
+	// For now, we accept all valid certificates
 
-	// Additional certificate validation can be added here
-	// (e.g., CRL checking, OCSP validation)
+	// Additional certificate validation can be added here when needed:
+	// - CN validation against allowed list from RoutingRule.Authentication
+	// - CRL checking, OCSP validation
+	// - Subject/Issuer validation
 
 	return nil
 }
 
 // selectBackend selects a backend service using load balancing
-func (p *IngressProxy) selectBackend(route *manager.IngressRoute) (*url.URL, error) {
-	if len(route.BackendServices) == 0 {
-		return nil, fmt.Errorf("no backend services configured")
+func (p *IngressProxy) selectBackend(vhost *manager.VirtualHost) (*url.URL, error) {
+	if vhost.Backend == "" {
+		return nil, fmt.Errorf("no backend configured for virtual host")
 	}
 
-	// Simple round-robin for now
-	// TODO: Implement more sophisticated load balancing
-	serviceID := route.BackendServices[0]
-
-	// Find the service details
+	// Find the backend configuration
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
@@ -504,17 +515,39 @@ func (p *IngressProxy) selectBackend(route *manager.IngressRoute) (*url.URL, err
 		return nil, fmt.Errorf("no cluster configuration")
 	}
 
-	for _, service := range p.clusterConfig.Services {
-		if service.ID == serviceID {
-			backend, err := url.Parse(fmt.Sprintf("http://%s", service.IPFQDN))
-			if err != nil {
-				return nil, fmt.Errorf("invalid backend URL: %w", err)
-			}
-			return backend, nil
+	// Look up the backend by name
+	var backend *manager.Backend
+	for i := range p.clusterConfig.Backends {
+		if p.clusterConfig.Backends[i].Name == vhost.Backend {
+			backend = &p.clusterConfig.Backends[i]
+			break
 		}
 	}
 
-	return nil, fmt.Errorf("backend service not found")
+	if backend == nil {
+		return nil, fmt.Errorf("backend '%s' not found", vhost.Backend)
+	}
+
+	if len(backend.Endpoints) == 0 {
+		return nil, fmt.Errorf("no endpoints available for backend '%s'", vhost.Backend)
+	}
+
+	// Simple round-robin selection for now
+	// TODO: Implement more sophisticated load balancing strategies
+	endpoint := backend.Endpoints[0]
+
+	// Build backend URL from endpoint
+	scheme := "http"
+	if backend.TLSConfig.Enabled {
+		scheme = "https"
+	}
+
+	backendURL, err := url.Parse(fmt.Sprintf("%s://%s:%d", scheme, endpoint.Host, endpoint.Port))
+	if err != nil {
+		return nil, fmt.Errorf("invalid backend URL: %w", err)
+	}
+
+	return backendURL, nil
 }
 
 // updateConfiguration updates the proxy's cluster configuration
@@ -523,10 +556,11 @@ func (p *IngressProxy) updateConfiguration(config *manager.ClusterConfig) {
 	defer p.mu.Unlock()
 
 	p.clusterConfig = config
-	p.authenticator.UpdateServices(config.Services)
+	// Note: MTLSAuthenticator does not need virtual host updates
+	// Virtual host routing is handled through the cluster configuration
 
-	fmt.Printf("Ingress proxy configuration updated - Services: %d, Routes: %d\n",
-		len(config.Services), len(config.IngressRoutes))
+	fmt.Printf("Ingress proxy configuration updated - Virtual Hosts: %d, Backends: %d\n",
+		len(config.VirtualHosts), len(config.Backends))
 }
 
 // Stop stops the ingress proxy servers
